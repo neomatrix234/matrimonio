@@ -35,3 +35,12 @@ Non viene mostrata durante la costruzione. Appare solo quando il mosaico è comp
 ## Upload multiplo
 
 La pagina `/upload` permette di selezionare anche più foto insieme. Le foto vengono ridotte e caricate una alla volta in automatico.
+
+
+## Aggiornamento UI caricamento
+
+La pagina `/upload` ora è a pieno schermo, senza scroll verticale, con titolo centrato "Partecipa al mosaico", spinner durante il caricamento e sfondo modificabile da `/admin`.
+
+Da `/admin` puoi caricare:
+- foto finale del mosaico;
+- immagine di sfondo della pagina caricamento invitati.

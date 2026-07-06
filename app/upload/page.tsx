@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -37,6 +37,20 @@ export default function UploadPage() {
   const [busy,setBusy]=useState(false);
   const [done,setDone]=useState(0);
   const [total,setTotal]=useState(0);
+  const [bgUrl,setBgUrl]=useState('');
+
+  useEffect(() => {
+    async function loadBg(){
+      try{
+        const r = await fetch('/api/status?x=' + Date.now());
+        const d = await r.json();
+        if(d?.uploadBackgroundFileId){
+          setBgUrl(`/api/image?id=${d.uploadBackgroundFileId}`);
+        }
+      }catch{}
+    }
+    loadBg();
+  }, []);
 
   async function onFileChange(e:React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
@@ -93,7 +107,7 @@ export default function UploadPage() {
         await new Promise(res => setTimeout(res, 180));
       }
 
-      setStatus(files.length === 1 ? 'Foto caricata.' : `${files.length} foto caricate.`);
+      setStatus(files.length === 1 ? 'Foto caricata. Grazie!' : `${files.length} foto caricate. Grazie!`);
       setFiles([]);
     } catch(err:any) {
       setError(err?.message || 'Errore invio.');
@@ -106,16 +120,21 @@ export default function UploadPage() {
   const pctMosaic = result ? Math.min(100,Math.round((result.receivedCount/result.totalTiles)*100)) : 0;
 
   return (
-    <main className="container">
-      <section className="card">
-        <h1>Carica foto</h1>
-        <p>Puoi scegliere una sola foto oppure più foto insieme. Ogni foto viene ridotta prima dell’invio.</p>
+    <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
+      {busy && <div className="spinnerOverlay">
+        <div className="spinner" />
+        <div style={{fontSize:24,fontWeight:800}}>Caricamento...</div>
+        <div style={{fontSize:16,marginTop:8}}>{status}</div>
+      </div>}
+
+      <section className="uploadPanel">
+        <h1 className="uploadTitle">Partecipa al mosaico</h1>
 
         <input className="field" type="file" accept="image/*" multiple onChange={onFileChange}/>
 
         {preview && <img className="preview" src={preview} alt="Anteprima" style={{display:'block'}}/>}
 
-        {status && <div className="ok">{status}</div>}
+        {status && !busy && <div className="ok">{status}</div>}
 
         {total > 0 && <>
           <div className="bigcount">{done} / {total} caricate</div>
@@ -134,10 +153,6 @@ export default function UploadPage() {
         <button className="btn" disabled={busy || !files.length} onClick={sendPhotos}>
           {busy ? 'Caricamento...' : files.length > 1 ? `Invia ${files.length} foto` : 'Invia foto'}
         </button>
-
-        <p className="small">
-          Per fare test, carica gruppi da 20–50 foto alla volta. Per 100 o più foto conviene fare più blocchi.
-        </p>
       </section>
     </main>
   );

@@ -6,3 +6,78 @@ p{font-size:18px;line-height:1.45;color:var(--muted)}.btn{display:inline-flex;wi
 .btn.secondary{background:white;color:var(--accent);border:1px solid #ddd}.btn.danger{background:#8d1b1b}.btn:disabled{opacity:.55;cursor:not-allowed}.field{display:block;width:100%;padding:16px;border:1px solid #ddd;border-radius:16px;background:white;font-size:18px}
 .preview{width:100%;border-radius:18px;margin:16px 0;display:none}.small{font-size:14px;color:var(--muted)}.error{background:#fff1f0;color:var(--danger);border:1px solid #ffd0cc;padding:12px 14px;border-radius:14px;display:none;white-space:pre-wrap}
 .ok{background:#eefaf0;color:var(--ok);border:1px solid #bdeac8;padding:12px 14px;border-radius:14px}.progressbar{height:12px;border-radius:999px;background:#eee;overflow:hidden;margin:12px 0}.progressbar>div{height:100%;background:#171717;transition:width .25s ease}.bigcount{font-weight:800;font-size:28px;color:#171717;margin:10px 0}.gridBtns{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.spacer{height:18px}
+/* Pagina caricamento invitati a schermo pieno */
+.uploadFull{
+  min-height:100svh;
+  height:100svh;
+  overflow:hidden;
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+}
+.uploadFull::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,.48),rgba(0,0,0,.62));
+}
+.uploadPanel{
+  position:relative;
+  z-index:1;
+  width:min(92vw,520px);
+  max-height:calc(100svh - 36px);
+  overflow:hidden;
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(8px);
+  border-radius:28px;
+  padding:clamp(18px,4vh,30px);
+  box-shadow:0 16px 60px rgba(0,0,0,.28);
+  text-align:center;
+}
+.uploadTitle{
+  text-align:center;
+  font-size:clamp(34px,8vw,58px);
+  line-height:1;
+  margin:0 0 18px;
+  color:#1d1713;
+}
+.uploadPanel .field{font-size:16px;padding:13px}
+.uploadPanel .preview{max-height:22svh;object-fit:cover;margin:10px 0}
+.uploadPanel .bigcount{font-size:22px;margin:8px 0}
+.uploadPanel p{font-size:15px;margin:8px 0}
+.spinnerOverlay{
+  position:fixed;
+  inset:0;
+  z-index:50;
+  background:rgba(0,0,0,.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  color:white;
+  text-align:center;
+  padding:24px;
+}
+.spinner{
+  width:66px;
+  height:66px;
+  border:7px solid rgba(255,255,255,.28);
+  border-top-color:white;
+  border-radius:50%;
+  animation:spin 1s linear infinite;
+  margin-bottom:18px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-height:700px){
+  .uploadTitle{font-size:32px;margin-bottom:10px}
+  .uploadPanel{padding:16px}
+  .uploadPanel .preview{max-height:16svh}
+  .uploadPanel .bigcount{font-size:18px}
+  .uploadPanel p,.small{font-size:12px}
+  .btn{padding:13px 16px;font-size:17px}
+}

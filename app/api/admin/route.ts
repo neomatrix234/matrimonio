@@ -21,6 +21,11 @@ export async function POST(req: NextRequest) {
       if (!payload.imageBase64) {
         return NextResponse.json({ ok:false, error:'Foto finale mancante' }, { status:400 });
       }
+    } else if (action === 'uploadBackground') {
+      payload.imageBase64 = String(body.imageBase64 || '');
+      if (!payload.imageBase64) {
+        return NextResponse.json({ ok:false, error:'Immagine sfondo mancante' }, { status:400 });
+      }
     } else if (action === 'clearGuestPhotos') {
       // ok
     } else {
