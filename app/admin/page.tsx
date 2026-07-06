@@ -31,6 +31,7 @@ export default function AdminPage(){
   const [msg,setMsg]=useState('');
   const [err,setErr]=useState('');
   const [busy,setBusy]=useState(false);
+  const [busyText,setBusyText]=useState('Operazione in corso...');
 
   const [targetBase64,setTargetBase64]=useState('');
   const [targetPreview,setTargetPreview]=useState('');
@@ -51,6 +52,7 @@ export default function AdminPage(){
   }
 
   async function setTotal(n:number){
+    setBusyText('Aggiorno numero foto...');
     setBusy(true); setErr(''); setMsg('');
     try{
       const d = await adminAction('setTotal',{totalTiles:n}, false);
@@ -64,6 +66,7 @@ export default function AdminPage(){
     setTargetBase64(''); setTargetPreview(''); setTargetInfo(''); setErr('');
     if(!file) return;
     try{
+      setBusyText('Leggo foto finale...');
       setBusy(true);
       const r=await readOriginalFile(file);
       setTargetBase64(r.base64);
@@ -78,6 +81,7 @@ export default function AdminPage(){
     setBgBase64(''); setBgPreview(''); setBgInfo(''); setErr('');
     if(!file) return;
     try{
+      setBusyText('Leggo sfondo...');
       setBusy(true);
       const r=await readOriginalFile(file);
       setBgBase64(r.base64);
@@ -104,8 +108,9 @@ export default function AdminPage(){
   async function uploadTarget(){
     if(!targetBase64){setErr('Scegli prima la foto finale.'); return;}
     try{
+      setBusyText('Carico foto finale...');
       await adminAction('uploadTarget',{imageBase64:targetBase64});
-      setMsg('Foto finale caricata in dimensione originale. Verrà mostrata solo alla fine del mosaico.');
+      setMsg('Foto finale caricata in dimensione originale.');
       setTargetBase64('');
     }catch{}
   }
@@ -113,8 +118,9 @@ export default function AdminPage(){
   async function uploadBackground(){
     if(!bgBase64){setErr('Scegli prima l’immagine di sfondo.'); return;}
     try{
+      setBusyText('Carico sfondo...');
       await adminAction('uploadBackground',{imageBase64:bgBase64});
-      setMsg('Sfondo pagina home/caricamento aggiornato in dimensione originale.');
+      setMsg('Sfondo home/caricamento aggiornato.');
       setBgBase64('');
     }catch{}
   }
@@ -122,6 +128,7 @@ export default function AdminPage(){
   async function clearGuestPhotos(){
     if(!confirm('Cancellare tutte le foto degli invitati da Google Drive? La foto finale e lo sfondo restano.')) return;
     try{
+      setBusyText('Reset mosaico...');
       const d = await adminAction('clearGuestPhotos');
       setMsg(`Foto invitati cancellate: ${d.trashed || 0}. Foto finale e sfondo NON cancellati.`);
       await load();
@@ -131,6 +138,7 @@ export default function AdminPage(){
   async function clearTarget(){
     if(!confirm('Cancellare la foto finale del mosaico?')) return;
     try{
+      setBusyText('Cancello foto finale...');
       await adminAction('clearTarget');
       setMsg('Foto finale cancellata.');
       await load();
@@ -140,6 +148,7 @@ export default function AdminPage(){
   async function clearBackground(){
     if(!confirm('Cancellare lo sfondo della pagina home/caricamento?')) return;
     try{
+      setBusyText('Cancello sfondo...');
       await adminAction('clearBackground');
       setMsg('Sfondo caricamento cancellato.');
       await load();
@@ -151,6 +160,17 @@ export default function AdminPage(){
 
   return (
     <main className="container">
+      {busy && <div className="adminSpinnerOverlay">
+        <div className="adminSpinner" />
+        <div style={{fontSize:24,fontWeight:800}}>{busyText}</div>
+      </div>}
+
+      {msg && !busy && <div className="adminFloatingMsg" onClick={()=>setMsg('')}>
+        <div className="ok">{msg}</div>
+        <div className="spacer" />
+        <button className="btn" onClick={()=>setMsg('')}>OK</button>
+      </div>}
+
       <section className="card">
         <h1>Admin fotomosaico</h1>
 
@@ -204,8 +224,6 @@ export default function AdminPage(){
         <div className="spacer" />
         <button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Reset mosaico: cancella solo foto invitati</button>
 
-        {busy && <><div className="spacer" /><div className="ok">Operazione in corso...</div></>}
-        {msg && <><div className="spacer" /><div className="ok">{msg}</div></>}
         {err && <><div className="spacer" /><div className="error" style={{display:'block'}}>{err}</div></>}
       </section>
     </main>

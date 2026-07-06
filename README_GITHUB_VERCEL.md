@@ -59,3 +59,15 @@ Da `/admin` puoi caricare:
 ## Schermo finale pulito
 
 Su `/screen`, quando parte il replay finale e la pagina è a schermo intero, vengono nascosti contatori e pulsanti. Restano solo il mosaico/foto finale e la frase di ringraziamento.
+
+
+## Aggiornamento UI admin e caricamento invitati
+
+- Lo spinner è ora anche nella pagina Admin.
+- I messaggi di conferma Admin appaiono al centro pagina, senza dover scorrere.
+- La pagina `/upload` parte direttamente da "Partecipa al mosaico".
+- Rimosso il titolo "Fotomosaico degli sposi" dalla pagina di caricamento.
+- Il pulsante file degli invitati ora si chiama "Carica foto".
+- Dopo l'invio, l'invitato vede subito quante foto sono state caricate e quante ne mancano.
+- Il box della pagina caricamento è semi trasparente e lascia vedere lo sfondo.
+- Non serve modificare Google Apps Script rispetto alla versione precedente `ADMIN_COMPLETO_ORIGINALI`.

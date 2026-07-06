@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 export default function Home() {
-  const title = process.env.NEXT_PUBLIC_EVENT_TITLE || 'Fotomosaico degli sposi';
   const [bgUrl,setBgUrl]=useState('');
 
   useEffect(() => {
@@ -23,8 +22,7 @@ export default function Home() {
   return (
     <main className="homeFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
       <section className="homePanel">
-        <h1>{title}</h1>
-        <h2 style={{textAlign:'center'}}>Partecipa al mosaico</h2>
+        <h1 className="uploadTitle">Partecipa al mosaico</h1>
         <Link className="btn" href="/upload">Carica foto</Link>
       </section>
     </main>

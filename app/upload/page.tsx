@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -29,6 +29,7 @@ async function compressImage(file: File): Promise<{base64:string;previewUrl:stri
 }
 
 export default function UploadPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files,setFiles]=useState<File[]>([]);
   const [preview,setPreview]=useState('');
   const [status,setStatus]=useState('');
@@ -38,6 +39,7 @@ export default function UploadPage() {
   const [done,setDone]=useState(0);
   const [total,setTotal]=useState(0);
   const [bgUrl,setBgUrl]=useState('');
+  const [notice,setNotice]=useState('');
 
   useEffect(() => {
     async function loadBg(){
@@ -60,6 +62,7 @@ export default function UploadPage() {
     setResult(null);
     setDone(0);
     setTotal(selected.length);
+    setNotice('');
     setStatus(selected.length === 1 ? '1 foto selezionata.' : `${selected.length} foto selezionate.`);
     setPreview('');
 
@@ -91,7 +94,8 @@ export default function UploadPage() {
 
   async function sendPhotos() {
     setError('');
-    if(!files.length) { setError('Prima scegli una o più foto.'); return; }
+    setNotice('');
+    if(!files.length) { setError('Prima carica una o più foto.'); return; }
 
     try {
       setBusy(true);
@@ -108,8 +112,19 @@ export default function UploadPage() {
         await new Promise(res => setTimeout(res, 180));
       }
 
+      const missing = Math.max(0, Number(last?.missing || 0));
+      const totalTiles = Number(last?.totalTiles || 0);
+      const received = Number(last?.receivedCount || 0);
+
+      if (last?.complete) {
+        setNotice(`Grazie! Fotomosaico completo: ${received}/${totalTiles}.`);
+      } else {
+        setNotice(`Grazie! Foto caricate. Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
+      }
+
       setStatus(files.length === 1 ? 'Foto caricata. Grazie!' : `${files.length} foto caricate. Grazie!`);
       setFiles([]);
+      if(fileInputRef.current) fileInputRef.current.value = '';
     } catch(err:any) {
       setError(err?.message || 'Errore invio.');
     } finally {
@@ -128,10 +143,29 @@ export default function UploadPage() {
         <div style={{fontSize:16,marginTop:8}}>{status}</div>
       </div>}
 
+      {notice && <div className="centerNotice" onClick={()=>setNotice('')}>
+        <div className="centerNoticeBox" onClick={(e)=>e.stopPropagation()}>
+          <h2>Grazie!</h2>
+          <p>{notice}</p>
+          <button className="btn" onClick={()=>setNotice('')}>OK</button>
+        </div>
+      </div>}
+
       <section className="uploadPanel">
         <h1 className="uploadTitle">Partecipa al mosaico</h1>
 
-        <input className="field" type="file" accept="image/*" multiple onChange={onFileChange}/>
+        <input
+          ref={fileInputRef}
+          className="hiddenFileInput"
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={onFileChange}
+        />
+
+        <button className="btn" onClick={()=>fileInputRef.current?.click()} disabled={busy}>
+          Carica foto
+        </button>
 
         {preview && <img className="preview" src={preview} alt="Anteprima" style={{display:'block'}}/>}
 
@@ -151,7 +185,7 @@ export default function UploadPage() {
         {error && <div className="error" style={{display:'block'}}>{error}</div>}
 
         <div className="spacer" />
-        <button className="btn" disabled={busy || !files.length} onClick={sendPhotos}>
+        <button className="btn secondary" disabled={busy || !files.length} onClick={sendPhotos}>
           {busy ? 'Caricamento...' : files.length > 1 ? `Invia ${files.length} foto` : 'Invia foto'}
         </button>
       </section>
