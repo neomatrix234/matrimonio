@@ -1,0 +1,7 @@
+APPS_SCRIPT_URL=https://script.google.com/macros/s/AKfycbwpXCoP66nfj1EajpUJBoHVlLtu-efz2NS7yzHPXg2xmgipWWvul9oxh2VT-LciSUs/exec
+APPS_SCRIPT_TOKEN=mosaico2026segreto
+ADMIN_TOKEN=adminmosaico2026
+NEXT_PUBLIC_EVENT_TITLE=Fotomosaico degli sposi
+NEXT_PUBLIC_EVENT_SUBTITLE=Carica una foto per costruire insieme il ricordo di questo giorno
+NEXT_PUBLIC_MAX_IMAGE_SIZE=700
+NEXT_PUBLIC_JPEG_QUALITY=0.70
