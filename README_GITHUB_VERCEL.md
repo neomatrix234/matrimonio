@@ -191,3 +191,11 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Il box caricamento entra lentamente dal centro con fade-in.
 - Il box è quasi trasparente, così si vedono ancora le scritte e l’immagine sotto.
 - Pulsanti e testi del box sono in stile oro/avorio.
+
+
+## Rifinitura finale splash
+
+- Ora parte prima il bianco luminoso.
+- Poi compaiono poco alla volta le parti scomposte.
+- Alla fine c’è un flash bianco lento e poi resta l’immagine completa.
+- Il pulsante `Oggi sposi` è stato abbassato leggermente e reso un po’ più alto, così la scritta resta tutta dentro.

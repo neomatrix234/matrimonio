@@ -901,3 +901,89 @@ pre{
     background:rgba(255,250,241,.10) !important;
   }
 }
+
+/* Ultima rifinitura splash: flash finale e bottone corretto */
+.splashCompose{
+  position:fixed;
+  inset:0;
+}
+.splashCompose::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:radial-gradient(circle at center, rgba(255,255,255,.96) 0%, rgba(255,255,255,.85) 34%, rgba(255,250,242,.38) 64%, rgba(255,255,255,0) 100%);
+  opacity:0;
+  pointer-events:none;
+  z-index:3;
+  animation:splashFinalFlashSlow 1.18s ease 4.18s forwards;
+}
+
+/* Più tempo di bianco luminoso iniziale, poi comparsa scomposta, poi flash bianco finale */
+.splashWhiteGlow{
+  animation:splashWhiteIntroSlow 1.15s ease 0s forwards !important;
+}
+.splashLayerFull{
+  animation:fullBaseExactFlash 1.55s ease .55s forwards !important;
+}
+.splashLayerVeilTop{
+  animation:pieceExactFlash 1.05s ease 1.25s forwards !important;
+}
+.splashLayerGrassTop{
+  animation:pieceExactFlash 1.05s ease 1.82s forwards !important;
+}
+.splashLayerCenterText{
+  animation:pieceExactFlash 1.15s ease 2.38s forwards !important;
+}
+.splashLayerFlowerBottom{
+  animation:pieceExactFlash 1.08s ease 3.02s forwards !important;
+}
+.splashLayerVeilBottom{
+  animation:pieceExactFlash 1.08s ease 3.36s forwards !important;
+}
+
+@keyframes splashWhiteIntroSlow{
+  0%{opacity:1; filter:brightness(1.12)}
+  70%{opacity:1; filter:brightness(1.02)}
+  100%{opacity:0; filter:brightness(1)}
+}
+
+@keyframes fullBaseExactFlash{
+  0%{opacity:0; filter:brightness(1.9) saturate(.04) blur(20px); transform:scale(1.03)}
+  55%{opacity:.26; filter:brightness(1.34) saturate(.36) blur(9px); transform:scale(1.015)}
+  100%{opacity:1; filter:brightness(1) saturate(1) blur(0); transform:scale(1)}
+}
+
+@keyframes pieceExactFlash{
+  0%{opacity:0; transform:scale(1.03); filter:brightness(1.85) saturate(.04) blur(18px)}
+  100%{opacity:1; transform:scale(1); filter:brightness(1) saturate(1) blur(0)}
+}
+
+@keyframes splashFinalFlashSlow{
+  0%{opacity:0}
+  28%{opacity:.22}
+  55%{opacity:.64}
+  78%{opacity:.18}
+  100%{opacity:0}
+}
+
+/* Pulsante leggermente più in basso e più alto, così la "p" rientra bene */
+.splashTodayButton{
+  top:49.15% !important;
+  width:clamp(118px, 34vw, 198px) !important;
+  height:clamp(32px, 8vw, 47px) !important;
+  box-shadow:
+    0 6px 14px rgba(133,101,36,.08),
+    inset 0 1px 0 rgba(255,255,255,.26),
+    inset 0 -2px 0 rgba(181,135,56,.06) !important;
+}
+.splashTodayButton.ready:active{
+  transform:translate(-50%,-48.9%) scale(.99) !important;
+}
+
+@media (max-width:720px){
+  .splashTodayButton{
+    top:49.2% !important;
+    width:clamp(110px, 35vw, 182px) !important;
+    height:clamp(30px, 8vw, 43px) !important;
+  }
+}
