@@ -1331,3 +1331,29 @@ pre{
   50%{opacity:.58; transform:scale(1.03); filter:blur(2px)}
   100%{opacity:1; transform:scale(1); filter:blur(0)}
 }
+
+/* Respiro sfondo con più frame */
+.uploadFull.uploaderActive{animation:uploadBgBreathSmoothFrames 9.5s linear infinite; will-change:background-size;}
+@keyframes uploadBgBreathSmoothFrames{
+  0%{background-size:100.00% auto;}
+  5%{background-size:100.18% auto;}
+  10%{background-size:100.36% auto;}
+  15%{background-size:100.55% auto;}
+  20%{background-size:100.75% auto;}
+  25%{background-size:100.96% auto;}
+  30%{background-size:101.16% auto;}
+  35%{background-size:101.35% auto;}
+  40%{background-size:101.53% auto;}
+  45%{background-size:101.69% auto;}
+  50%{background-size:101.82% auto;}
+  55%{background-size:101.69% auto;}
+  60%{background-size:101.53% auto;}
+  65%{background-size:101.35% auto;}
+  70%{background-size:101.16% auto;}
+  75%{background-size:100.96% auto;}
+  80%{background-size:100.75% auto;}
+  85%{background-size:100.55% auto;}
+  90%{background-size:100.36% auto;}
+  95%{background-size:100.18% auto;}
+  100%{background-size:100.00% auto;}
+}

@@ -227,3 +227,10 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Corretto l’effetto gonfia/sgonfia sotto il box.
 - Ora il movimento è più piccolo, uniforme e continuo.
 - Niente scatti: il respiro va in andata e ritorno in modo morbido.
+
+
+## Respiro con più fotogrammi
+
+- Il gonfia/sgonfia usa più passaggi intermedi.
+- La crescita e il ritorno sono più uniformi.
+- Il movimento è più piccolo e continuo, senza salto tra due stati fermi.
