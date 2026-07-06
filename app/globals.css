@@ -1357,3 +1357,94 @@ pre{
   95%{background-size:100.18% auto;}
   100%{background-size:100.00% auto;}
 }
+/* Splash uguale su smartphone e PC */
+.splashCompose{
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,1) 0%, rgba(255,250,243,.95) 48%, rgba(244,232,214,.92) 100%) !important;
+}
+
+/* Su desktop lo splash viene contenuto in un formato 9:16 come telefono */
+.splashCompose .splashWhiteGlow,
+.splashCompose .splashLayer,
+.splashCompose::before{
+  left:50% !important;
+  top:50% !important;
+  width:min(100vw, calc(100vh * 9 / 16)) !important;
+  height:min(100vh, calc(100vw * 16 / 9)) !important;
+  transform:translate(-50%,-50%) scale(1.025);
+  background-size:cover !important;
+  background-position:center !important;
+}
+
+/* mantiene le animazioni dei ritagli ma dentro lo stesso rettangolo verticale */
+.splashCompose .splashLayer{
+  inset:auto !important;
+}
+
+/* flash bianco sempre a tutto schermo */
+.splashCompose::after{
+  left:0 !important;
+  top:0 !important;
+  width:100% !important;
+  height:100% !important;
+}
+
+/* il pulsante Oggi sposi segue il formato verticale anche da PC */
+.splashTodayButton{
+  top:calc(50% + min(100vh, calc(100vw * 16 / 9)) * -0.010) !important;
+  width:clamp(118px, min(35vw, 22vh), 210px) !important;
+  height:clamp(36px, min(9vw, 5.6vh), 54px) !important;
+}
+
+/* Quando il box si apre, anche lo sfondo sotto resta nello stesso formato 9:16 */
+.uploadFull.uploaderActive{
+  background-size: auto 100% !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+}
+
+/* Respiro uniforme anche su PC: piccolo zoom mantenendo formato verticale */
+@keyframes uploadBgBreathSmoothFrames{
+  0%{background-size:auto 100.00%;}
+  5%{background-size:auto 100.12%;}
+  10%{background-size:auto 100.24%;}
+  15%{background-size:auto 100.36%;}
+  20%{background-size:auto 100.48%;}
+  25%{background-size:auto 100.60%;}
+  30%{background-size:auto 100.72%;}
+  35%{background-size:auto 100.84%;}
+  40%{background-size:auto 100.96%;}
+  45%{background-size:auto 101.08%;}
+  50%{background-size:auto 101.18%;}
+  55%{background-size:auto 101.08%;}
+  60%{background-size:auto 100.96%;}
+  65%{background-size:auto 100.84%;}
+  70%{background-size:auto 100.72%;}
+  75%{background-size:auto 100.60%;}
+  80%{background-size:auto 100.48%;}
+  85%{background-size:auto 100.36%;}
+  90%{background-size:auto 100.24%;}
+  95%{background-size:auto 100.12%;}
+  100%{background-size:auto 100.00%;}
+}
+
+/* Su smartphone resta pieno schermo come prima */
+@media (max-width:720px){
+  .splashCompose .splashWhiteGlow,
+  .splashCompose .splashLayer,
+  .splashCompose::before{
+    left:0 !important;
+    top:0 !important;
+    width:100% !important;
+    height:100% !important;
+    transform:none !important;
+  }
+  .splashTodayButton{
+    top:49.5% !important;
+    width:clamp(118px, 36vw, 190px) !important;
+    height:clamp(38px, 8.8vw, 48px) !important;
+  }
+  .uploadFull.uploaderActive{
+    background-size:cover !important;
+  }
+}

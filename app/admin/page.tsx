@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-const options = [600, 800, 1000, 1200, 1500];
+const options = [600, 800, 1000, 1200, 1500, 2000, 2500, 3000];
 
 function readOriginalFile(file: File): Promise<{base64:string;previewUrl:string;sizeKb:number}> {
   return new Promise((resolve, reject) => {

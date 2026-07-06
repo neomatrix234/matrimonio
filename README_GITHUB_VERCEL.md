@@ -250,3 +250,30 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - velo soft-light finale.
 - Nel popup tessera si vede la foto originale e la versione realmente modificata per il mosaico.
 - Non richiede Python o librerie esterne: funziona direttamente su Vercel/browser.
+
+
+## Tessere mosaico aumentate
+
+- Aggiunti obiettivi più alti:
+  - 2000 tessere
+  - 2500 tessere
+  - 3000 tessere
+- Con più tessere il fotomosaico è meno “a pixel grandi” e la foto finale si legge meglio.
+- Griglie usate:
+  - 600 = 30×20
+  - 800 = 40×20
+  - 1000 = 40×25
+  - 1200 = 40×30
+  - 1500 = 50×30
+  - 2000 = 50×40
+  - 2500 = 50×50
+  - 3000 = 60×50
+- Per l’evento reale è consigliato usare 2000 o 3000 se ci sono abbastanza foto.
+
+
+## Splash uguale su smartphone e PC
+
+- Su PC lo splash viene mostrato in formato verticale 9:16, centrato come uno smartphone.
+- Le animazioni dei ritagli usano lo stesso rettangolo verticale anche su desktop.
+- Il pulsante `Oggi sposi` segue la stessa posizione della versione smartphone.
+- Quando si apre il box, lo sfondo resta nello stesso formato verticale anche su PC.

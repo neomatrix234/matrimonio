@@ -29,7 +29,10 @@ function gridForTotal(total:number){
   if(total <= 800) return {cols:40, rows:20};
   if(total <= 1000) return {cols:40, rows:25};
   if(total <= 1200) return {cols:40, rows:30};
-  return {cols:50, rows:30};
+  if(total <= 1500) return {cols:50, rows:30};
+  if(total <= 2000) return {cols:50, rows:40};
+  if(total <= 2500) return {cols:50, rows:50};
+  return {cols:60, rows:50};
 }
 
 function clamp(v:number,min=0,max=255){
@@ -302,7 +305,7 @@ export default function ScreenPage(){
         matchScore:best.score
       }]);
 
-      await new Promise(res=>setTimeout(res,55));
+      await new Promise(res=>setTimeout(res, total > 1500 ? 18 : total > 1000 ? 28 : 45));
     }
   }
 
