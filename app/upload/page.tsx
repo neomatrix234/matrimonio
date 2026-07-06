@@ -121,10 +121,14 @@ export default function UploadPage() {
       const totalTiles = Number(data?.totalTiles || 0);
       const received = Number(data?.receivedCount || 0);
 
-      showThanks(data?.complete
-        ? `Grazie! Fotomosaico completo: ${received}/${totalTiles}.`
-        : `Grazie! Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`
-      );
+      if (data?.duplicate) {
+        showThanks(`Questa foto era già stata caricata. Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
+      } else {
+        showThanks(data?.complete
+          ? `Grazie! Fotomosaico completo: ${received}/${totalTiles}.`
+          : `Grazie! Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`
+        );
+      }
     } catch(err:any) {
       setError(err?.message || 'Errore invio.');
     } finally {

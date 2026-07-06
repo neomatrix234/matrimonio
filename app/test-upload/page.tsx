@@ -37,6 +37,7 @@ export default function TestUploadPage(){
   const [status,setStatus]=useState('');
   const [busy,setBusy]=useState(false);
   const [done,setDone]=useState(0);
+  const [duplicates,setDuplicates]=useState(0);
   const [result,setResult]=useState<any>(null);
   const [err,setErr]=useState('');
 
@@ -73,6 +74,7 @@ export default function TestUploadPage(){
     const selected=Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/'));
     setFiles(selected);
     setDone(0);
+    setDuplicates(0);
     setStatus(`${selected.length} foto selezionate per test.`);
   }
 
@@ -86,7 +88,7 @@ export default function TestUploadPage(){
 
   async function send(){
     if(!files.length){setErr('Scegli prima le foto.');return;}
-    setBusy(true);setErr('');setDone(0);setResult(null);stopRef.current=false;
+    setBusy(true);setErr('');setDone(0);setDuplicates(0);setResult(null);stopRef.current=false;
     try{
       let last:any=null;
       for(let i=0;i<files.length;i++){
@@ -94,10 +96,11 @@ export default function TestUploadPage(){
         setStatus(`Test upload: foto ${i+1} di ${files.length}`);
         last=await uploadOne(files[i],i);
         setDone(i+1);
+        if(last?.duplicate) setDuplicates(prev=>prev+1);
         setResult(last);
         await new Promise(res=>setTimeout(res,150));
       }
-      if(!stopRef.current) setStatus(`Test completato: ${files.length} foto caricate.`);
+      if(!stopRef.current) setStatus(`Test completato: ${files.length} file elaborati.`);
       setFiles([]);
       if(inputRef.current) inputRef.current.value='';
     }catch(e:any){setErr(e?.message||'Errore test upload');}
@@ -122,11 +125,12 @@ export default function TestUploadPage(){
     <input ref={inputRef} className="field" type="file" accept="image/*" multiple onChange={onFiles}/>
     <div className="bigcount">{done} / {files.length}</div>
     <div className="progressbar"><div style={{width:`${pct}%`}}/></div>
+    <p className="small">Duplicati reali trovati e non salvati di nuovo: {duplicates}</p>
     <button className="btn" disabled={busy||!files.length} onClick={send}>Carica foto test</button>
     <div className="spacer"/><button className="btn danger" disabled={!busy} onClick={()=>{stopRef.current=true;setStatus('Interruzione richiesta...')}}>Interrompi upload test</button>
     <p className="small">Puoi interrompere anche premendo ESC.</p>
     {status&&<><div className="spacer"/><div className="ok">{status}</div></>}
-    {result&&<p>Mosaico: {result.receivedCount}/{result.totalTiles}. Mancano {result.missing}.</p>}
+    {result&&<p>{result.duplicate ? 'Ultima immagine già presente, saltata.' : 'Ultima immagine salvata.'} Mosaico: {result.receivedCount}/{result.totalTiles}. Mancano {result.missing}.</p>}
     {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
     <div className="spacer"/><Link className="btn secondary" href="/admin">Torna ad Admin</Link>
   </section></main>
