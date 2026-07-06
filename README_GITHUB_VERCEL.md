@@ -220,3 +220,10 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Solo dopo il flash appare in fade-in l’immagine completa.
 - I segni delle giunzioni sfumano via sotto l’immagine finale.
 - Il pulsante Oggi sposi compare di nuovo ed è più alto per contenere bene la scritta.
+
+
+## Respiro sfondo più fluido
+
+- Corretto l’effetto gonfia/sgonfia sotto il box.
+- Ora il movimento è più piccolo, uniforme e continuo.
+- Niente scatti: il respiro va in andata e ritorno in modo morbido.
