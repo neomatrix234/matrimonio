@@ -1,3 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
-export const runtime='nodejs';
-export async function POST(req:NextRequest){try{const scriptUrl=process.env.APPS_SCRIPT_URL;const token=process.env.APPS_SCRIPT_TOKEN;if(!scriptUrl||!token)return NextResponse.json({ok:false,error:'Configurazione server mancante.'},{status:500});const body=await req.json();const filename=String(body.filename||`foto_${Date.now()}.jpg`);const imageBase64=String(body.imageBase64||'');if(!imageBase64||imageBase64.length<100)return NextResponse.json({ok:false,error:'Immagine mancante.'},{status:400});if(imageBase64.length>1600000)return NextResponse.json({ok:false,error:'Foto ancora troppo pesante.'},{status:413});const resp=await fetch(scriptUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token,filename,imageBase64}),redirect:'follow'});const text=await resp.text();let data:any={};try{data=JSON.parse(text)}catch{data={ok:false,error:text.slice(0,500)}}if(!resp.ok||!data.ok)return NextResponse.json({ok:false,error:data.error||'Errore salvataggio su Drive.'},{status:500});return NextResponse.json(data)}catch(err:any){return NextResponse.json({ok:false,error:err?.message||'Errore upload.'},{status:500})}}
+export const runtime = 'nodejs';
+
+export async function POST(req: NextRequest) {
+  try {
+    const scriptUrl = process.env.APPS_SCRIPT_URL;
+    const token = process.env.APPS_SCRIPT_TOKEN;
+    if (!scriptUrl || !token) {
+      return NextResponse.json({ ok: false, error: 'Configurazione server mancante.' }, { status: 500 });
+    }
+
+    const body = await req.json();
+    const filename = String(body.filename || `foto_${Date.now()}.jpg`);
+    const imageBase64 = String(body.imageBase64 || '');
+
+    if (!imageBase64 || imageBase64.length < 100) {
+      return NextResponse.json({ ok: false, error: 'Immagine mancante.' }, { status: 400 });
+    }
+    if (imageBase64.length > 1600000) {
+      return NextResponse.json({ ok: false, error: 'Foto ancora troppo pesante.' }, { status: 413 });
+    }
+
+    const resp = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'uploadPhoto', token, filename, imageBase64 }),
+      redirect: 'follow',
+    });
+
+    const text = await resp.text();
+    let data: any = {};
+    try { data = JSON.parse(text); } catch { data = { ok: false, error: text.slice(0, 500) }; }
+
+    if (!resp.ok || !data.ok) {
+      return NextResponse.json({ ok: false, error: data.error || 'Errore salvataggio su Drive.' }, { status: 500 });
+    }
+
+    return NextResponse.json(data);
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err?.message || 'Errore upload.' }, { status: 500 });
+  }
+}
