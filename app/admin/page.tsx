@@ -22,7 +22,6 @@ export default function AdminPage(){
   const [logged,setLogged]=useState(false);
   const [password,setPassword]=useState('');
   const [newPassword,setNewPassword]=useState('');
-  const [menu,setMenu]=useState(false);
 
   const [data,setData]=useState<any>(null);
   const [msg,setMsg]=useState('');
@@ -155,20 +154,21 @@ export default function AdminPage(){
 
   return (
     <main className="container">
-      <button className="hamburger" onClick={()=>setMenu(!menu)}>{menu?'×':'☰'}</button>
-      {menu&&<div className="hamburgerPanel">
-        <Link className="btn secondary" href="/" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Home</Link>
-        <Link className="btn secondary" href="/upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload invitato</Link>
-        <Link className="btn secondary" href="/test-upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload test multiplo</Link>
-        <Link className="btn secondary" href="/screen" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Schermo mosaico</Link>
-        <button className="btn danger" onClick={logout}>Esci Admin</button>
-      </div>}
-
       {busy&&<div className="adminSpinnerOverlay"><div className="adminSpinner"/><div style={{fontSize:24,fontWeight:800}}>{busyText}</div></div>}
       {msg&&!busy&&<div className="adminFloatingMsg" onClick={()=>setMsg('')}><div className="ok">{msg}</div><div className="spacer"/><button className="btn" onClick={()=>setMsg('')}>OK</button></div>}
 
       <section className="card">
-        <h1>Admin fotomosaico</h1>
+        <div className="mobileAdminTop">
+          <h1 style={{margin:0}}>Admin fotomosaico</h1>
+          <button className="btn danger" onClick={logout}>Esci</button>
+        </div>
+        <div className="adminNavGrid">
+          <Link className="btn secondary" href="/" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Home</Link>
+          <Link className="btn secondary" href="/upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload invitato</Link>
+          <Link className="btn secondary" href="/test-upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload test</Link>
+          <Link className="btn secondary" href="/screen" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Schermo</Link>
+        </div>
+        <div className="spacer" />
         {data&&<div className="adminStatus">
           <div><b>Obiettivo:</b> {data.totalTiles} foto/tessere</div>
           <div><b>Foto invitati:</b> {data.receivedCount}</div>

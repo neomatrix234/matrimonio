@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -40,7 +39,6 @@ export default function HomeUploadPage() {
   const [opacity,setOpacity]=useState(0.10);
   const [bgDark,setBgDark]=useState(0.18);
   const [notice,setNotice]=useState('');
-  const [menu,setMenu]=useState(false);
 
   useEffect(() => {
     async function loadBg(){
@@ -97,12 +95,6 @@ export default function HomeUploadPage() {
   return (
     <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
       <div className="bgDim" style={{opacity:bgDark}} />
-      <button className="hamburger" onClick={()=>setMenu(!menu)}>{menu ? '×' : '☰'}</button>
-      {menu && <div className="hamburgerPanel">
-        <Link className="btn secondary" href="/admin">Area Admin</Link>
-        <Link className="btn secondary" href="/screen">Schermo mosaico</Link>
-      </div>}
-
       {busy && <div className="spinnerOverlay"><div className="spinner" /><div style={{fontSize:24,fontWeight:800}}>Caricamento...</div><div style={{fontSize:16,marginTop:8}}>{status}</div></div>}
 
       {notice && <div className="centerNotice" onClick={()=>setNotice('')}>

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 
 type Photo = { id:string; name:string; created:number; size:number };
 type Tile = { id:string; index:number; order:number; url:string };
@@ -61,7 +60,6 @@ export default function ScreenPage(){
   const [isFullscreen,setIsFullscreen]=useState(false);
   const [replayStarted,setReplayStarted]=useState(false);
   const [paused,setPaused]=useState(false);
-  const [menu,setMenu]=useState(false);
 
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());
@@ -192,16 +190,6 @@ export default function ScreenPage(){
 
   return (
     <div style={{height:'100vh',background:'#111',color:'#fff',fontFamily:'Arial, sans-serif',overflow:'hidden',position:'relative'}}>
-      {!isFullscreen && <>
-        <button className="hamburger screenHamburger" onClick={()=>setMenu(!menu)}>{menu ? '×' : '☰'}</button>
-        {menu && <div className="hamburgerPanel" style={{zIndex:40}}>
-          <Link className="btn secondary" href="/">Home / Upload</Link>
-          <Link className="btn secondary" href="/upload">Upload invitato</Link>
-          <Link className="btn secondary" href="/admin">Area Admin</Link>
-          <Link className="btn secondary" href="/test-upload">Upload test</Link>
-        </div>}
-      </>}
-
       {!isFullscreen && <div style={{position:'absolute',top:22,left:28,right:88,display:'flex',justifyContent:'space-between',zIndex:5}}>
         <div>
           <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>

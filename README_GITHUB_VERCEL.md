@@ -108,3 +108,13 @@ Novità:
 - In `/screen`, fuori dallo schermo intero, i pulsanti sono tutti in basso insieme e non si sovrappongono.
 - In schermo intero non si vede nessun indicatore, menu o pulsante.
 - Fuori dallo schermo intero si vede il menu hamburger per muoversi tra le sezioni.
+
+
+## Aggiornamento mobile e navigazione pubblica
+
+- Nelle pagine pubbliche `/` e `/upload` non compare più il menu hamburger: l’utente vede solo il caricamento foto.
+- L’area Admin si apre solo digitando `/admin`.
+- Dentro `/admin` ci sono i link di navigazione ordinati e contenuti nella pagina.
+- La pagina Admin è più sicura su cellulare: testi, pulsanti e anteprime restano dentro lo schermo senza uscire orizzontalmente.
+- Lo schermo `/screen` non mostra hamburger; in fullscreen resta completamente pulito.
+- Se serve Admin da cellulare, si entra direttamente da `/admin` con password.
