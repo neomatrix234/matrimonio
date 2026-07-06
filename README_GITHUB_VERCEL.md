@@ -172,3 +172,12 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - posizione X/Y
   - scala manuale
 - Da Admin vedi un’anteprima verticale tipo smartphone.
+
+
+## Nuovo splash con pulsante
+
+- Lo splash usa direttamente l'immagine completa allegata.
+- L'animazione ricostruisce l'immagine a livelli da pagina bianca luminosa fino al colore reale.
+- Al termine compare il pulsante 3D lampeggiante `Oggi sposi`.
+- Solo premendo `Oggi sposi` si apre il box di caricamento con fade-in.
+- Il box `Carica foto` resta quasi trasparente di default.

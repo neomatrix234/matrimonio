@@ -31,6 +31,7 @@ async function compressImage(file: File): Promise<{base64:string;previewUrl:stri
 export default function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimer = useRef<any>(null);
+
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
   const [status,setStatus]=useState('');
@@ -38,12 +39,14 @@ export default function UploadPage() {
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
   const [bgUrl,setBgUrl]=useState('');
-  const [opacity,setOpacity]=useState(0.10);
+  const [opacity,setOpacity]=useState(0.04);
   const [bgDark,setBgDark]=useState(0.18);
   const [bgLayout,setBgLayout]=useState({fit:'contain',posX:50,posY:50,scale:100});
   const [notice,setNotice]=useState('');
+
   const [showSplash,setShowSplash]=useState(true);
-  const [splashText,setSplashText]=useState({line1:'Ester & Elia',line2:'Oggi sposi',line3:'22/08/2026'});
+  const [splashReady,setSplashReady]=useState(false);
+  const [showUploader,setShowUploader]=useState(false);
 
   function resetToInitial(){
     setFile(null);
@@ -68,7 +71,6 @@ export default function UploadPage() {
       try{
         const r = await fetch('/api/status?x=' + Date.now());
         const d = await r.json();
-        if(d?.splashText) setSplashText(d.splashText);
         if(d?.panelOpacity !== undefined) setOpacity(Number(d.panelOpacity));
         if(d?.backgroundDarkness !== undefined) setBgDark(Number(d.backgroundDarkness));
         if(d?.backgroundLayout) setBgLayout(d.backgroundLayout);
@@ -79,9 +81,19 @@ export default function UploadPage() {
       }catch{}
     }
     loadBg();
-    const splashTimer = setTimeout(()=>setShowSplash(false), 5000);
-    return () => { clearTimeout(splashTimer); if(noticeTimer.current) clearTimeout(noticeTimer.current); };
+
+    const readyTimer = setTimeout(()=>setSplashReady(true), 4300);
+
+    return () => {
+      clearTimeout(readyTimer);
+      if(noticeTimer.current) clearTimeout(noticeTimer.current);
+    };
   }, []);
+
+  function enterUploader(){
+    setShowUploader(true);
+    setTimeout(()=>setShowSplash(false), 650);
+  }
 
   async function onFileChange(e:React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'))[0] || null;
@@ -149,14 +161,21 @@ export default function UploadPage() {
     <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)', backgroundSize:bgSize, backgroundPosition:bgPosition}}>
       <div className="bgDim" style={{opacity:bgDark}} />
 
-      {showSplash && <div className="splashScreen">
-        <img className="splashImage" src="/splash-wedding.png" alt="Ester & Elia" />
-        <div className="splashGlow" />
-        <div className="splashText">
-          <div className="splashLine1">{splashText.line1}</div>
-          <div className="splashLine2">{splashText.line2}</div>
-          <div className="splashLine3">{splashText.line3}</div>
-        </div>
+      {showSplash && <div className={`splashCompose ${showUploader ? 'fadeOut' : ''}`}>
+        <div className="splashWhiteGlow" />
+        <div className="splashLayer splashLayerFull" />
+        <div className="splashLayer splashLayerVeilTop" />
+        <div className="splashLayer splashLayerGrassTop" />
+        <div className="splashLayer splashLayerCenterText" />
+        <div className="splashLayer splashLayerFlowerBottom" />
+        <div className="splashLayer splashLayerVeilBottom" />
+        <button
+          className={`splashTodayButton ${splashReady ? 'ready' : ''}`}
+          onClick={enterUploader}
+          aria-label="Apri caricamento foto"
+        >
+          Oggi sposi
+        </button>
       </div>}
 
       {busy && <div className="spinnerOverlay">
@@ -173,7 +192,7 @@ export default function UploadPage() {
         </div>
       </div>}
 
-      <section className="uploadPanel simpleUpload" style={{background:`rgba(255,255,255,${opacity})`}}>
+      <section className={`uploadPanel simpleUpload uploadPanelAnimated ${showUploader ? 'visible' : 'hidden'}`} style={{background:`rgba(255,255,255,${opacity})`}}>
         <h1 className="uploadTitle">Partecipa al mosaico</h1>
 
         <input
