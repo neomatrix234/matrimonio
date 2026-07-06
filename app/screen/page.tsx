@@ -341,59 +341,116 @@ export default function ScreenPage(){
     if(!realPhotos.length) return;
 
     const maxReuse = Math.max(1, Math.ceil(total / realPhotos.length));
-    const batchCells = targetCellsRef.current
-      .filter(c=>!usedIndexes.current.has(c.index))
-      .sort((a,b)=>b.importance-a.importance);
 
-    const featureList:PhotoFeature[]=[];
-    for(const p of realPhotos){
-      if(paused || runId !== currentRun.current) return;
-      try{ featureList.push(await getFeature(p)); }catch{}
-    }
-
-    if(!appendOnly){
+    if(!appendOnly && usedIndexes.current.size === 0){
       resetPhotoUseCounts();
     }
 
-    for(const cell of batchCells){
-      if(paused || runId !== currentRun.current) break;
+    // IMPORTANTE:
+    // prima versione LAB aspettava di analizzare tutte le foto prima di disegnare.
+    // Con 200/300/1000 foto poteva sembrare bloccata a 0%.
+    // Ora analizziamo e disegniamo subito, a piccoli passaggi.
+    let availableFeatures:PhotoFeature[]=[];
+    const cellsByImportance = targetCellsRef.current
+      .slice()
+      .sort((a,b)=>b.importance-a.importance);
 
-      let best:PhotoFeature|null=null;
+    async function getNextFreeImportantCell(){
+      for(const c of cellsByImportance){
+        if(!usedIndexes.current.has(c.index)) return c;
+      }
+      return null;
+    }
+
+    async function placeFeature(feature:PhotoFeature){
+      let bestCell:TargetCell|null=null;
       let bestScore=Number.POSITIVE_INFINITY;
 
-      // Scelta percettiva in LAB. Con poche foto consente ripetizioni bilanciate.
-      for(const f of featureList){
-        const score=photoCellScore(f,cell,maxReuse);
+      // cerca una cella adatta tra un sottoinsieme di celle ancora libere:
+      // è molto più veloce e permette avvio immediato.
+      let checked=0;
+      for(const cell of cellsByImportance){
+        if(usedIndexes.current.has(cell.index)) continue;
+        const score=photoCellScore(feature,cell,maxReuse);
         if(score<bestScore){
           bestScore=score;
-          best=f;
+          bestCell=cell;
         }
+        checked++;
+        if(checked > 420) break;
       }
 
-      if(!best) continue;
-      best.useCount += 1;
+      // se non trova entro il campione, prende la prossima cella importante libera
+      if(!bestCell){
+        bestCell=await getNextFreeImportantCell();
+        bestScore=0;
+      }
 
-      let modifiedUrl=best.url;
+      if(!bestCell) return false;
+
+      feature.useCount += 1;
+      let modifiedUrl=feature.url;
       try{
-        modifiedUrl=await createMosaicTile(best.url, cell.color);
+        modifiedUrl=await createMosaicTile(feature.url, bestCell.color);
       }catch(e){}
 
-      usedIndexes.current.add(cell.index);
+      usedIndexes.current.add(bestCell.index);
 
-      setTiles(prev=>[...prev,{
-        id:best!.id,
-        index:cell.index,
-        order:prev.length+1,
-        url:best!.url,
-        modifiedUrl,
-        color:cell.color,
-        sourceColor:best!.avg,
-        matchScore:bestScore,
-        repeated:best!.useCount
-      }]);
+      setTiles(prev=>{
+        // evita doppioni sulla stessa cella se due cicli si sovrappongono
+        if(prev.some(x=>x.index===bestCell!.index)) return prev;
+        return [...prev,{
+          id:feature.id,
+          index:bestCell!.index,
+          order:prev.length+1,
+          url:feature.url,
+          modifiedUrl,
+          color:bestCell!.color,
+          sourceColor:feature.avg,
+          matchScore:bestScore,
+          repeated:feature.useCount
+        }];
+      });
 
-      if(usedIndexes.current.size >= total) break;
-      await new Promise(res=>setTimeout(res,total>2000?8:total>1200?14:24));
+      return true;
+    }
+
+    // 1) Avvio immediato: analizza una foto e la mette subito nel mosaico.
+    for(const p of realPhotos){
+      if(paused || runId !== currentRun.current) return;
+      if(usedIndexes.current.size >= total) return;
+
+      let f:PhotoFeature|null=null;
+      try{
+        f=await getFeature(p);
+        availableFeatures.push(f);
+        await placeFeature(f);
+      }catch(e){}
+
+      await new Promise(res=>setTimeout(res,total>2000?4:total>1200?8:14));
+    }
+
+    // 2) Se ci sono più tessere che foto, riusa le foto in modo controllato
+    // fino a completare il wall mosaic.
+    while(usedIndexes.current.size < total && availableFeatures.length){
+      if(paused || runId !== currentRun.current) return;
+
+      // prende le foto meno usate e più adatte, così evita ripetizioni troppo ravvicinate
+      availableFeatures.sort((a,b)=>a.useCount-b.useCount);
+
+      let placedInRound=false;
+      for(const f of availableFeatures){
+        if(paused || runId !== currentRun.current) return;
+        if(usedIndexes.current.size >= total) return;
+        if(f.useCount >= maxReuse) continue;
+
+        const ok=await placeFeature(f);
+        if(ok) placedInRound=true;
+
+        await new Promise(res=>setTimeout(res,total>2000?3:total>1200?6:10));
+      }
+
+      if(!placedInRound) break;
     }
   }
 
@@ -414,7 +471,7 @@ export default function ScreenPage(){
 
       if(!processing.current && targetCellsRef.current.length && !replayStarted){
         processing.current=true;
-        const oldCount=tiles.length;
+        const oldCount=usedIndexes.current.size;
         await buildWallMosaic(s.photos || [], total, currentRun.current, oldCount>0);
         processing.current=false;
       }
@@ -478,7 +535,7 @@ export default function ScreenPage(){
 
   useEffect(()=>{
     fetchStatus();
-    const id=setInterval(fetchStatus,6500);
+    const id=setInterval(fetchStatus,9000);
     const fs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange',fs);
     return ()=>{

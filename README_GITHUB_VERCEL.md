@@ -292,3 +292,12 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - rielaborazione reale di ogni tessera con Canvas;
   - trasferimento colore mantenendo luci/ombre della foto originale.
 - È una soluzione web equivalente nello scopo ai progetti Python/OpenCV, ma senza server dedicato.
+
+
+## Fix LAB fast start
+
+- Corretto il problema del mosaico fermo a 0%.
+- Il motore LAB non aspetta più di analizzare tutte le foto prima di disegnare.
+- Ora ogni foto viene analizzata e inserita subito nel mosaico.
+- Se le tessere sono più delle foto, le foto vengono riutilizzate in modo controllato fino al completamento.
+- Ridotto il rischio di blocco con 2000/3000 tessere.
