@@ -234,3 +234,19 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Il gonfia/sgonfia usa più passaggi intermedi.
 - La crescita e il ritorno sono più uniformi.
 - Il movimento è più piccolo e continuo, senza salto tra due stati fermi.
+
+
+## Motore fotomosaico migliorato
+
+- Migliorata la costruzione del mosaico nella pagina `/screen`.
+- Ogni foto viene analizzata per colore medio, luminosità e saturazione.
+- La foto viene assegnata alla cella più adatta della foto finale con distanza colore pesata.
+- Ogni tessera viene realmente rielaborata con Canvas:
+  - ritaglio quadrato centrato;
+  - adattamento alla luminosità della cella finale;
+  - colorazione verso il colore target;
+  - conservazione di luci/ombre della foto originale;
+  - micro-contrasto;
+  - velo soft-light finale.
+- Nel popup tessera si vede la foto originale e la versione realmente modificata per il mosaico.
+- Non richiede Python o librerie esterne: funziona direttamente su Vercel/browser.

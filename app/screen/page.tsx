@@ -3,7 +3,26 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Photo = { id:string; name:string; created:number; size:number };
-type Tile = { id:string; index:number; order:number; url:string; color:number[] };
+type Rgb = [number,number,number];
+
+type PhotoFeature = {
+  id:string;
+  url:string;
+  avg:Rgb;
+  lum:number;
+  sat:number;
+};
+
+type Tile = {
+  id:string;
+  index:number;
+  order:number;
+  url:string;
+  modifiedUrl:string;
+  color:Rgb;
+  sourceColor:Rgb;
+  matchScore:number;
+};
 
 function gridForTotal(total:number){
   if(total <= 600) return {cols:30, rows:20};
@@ -13,54 +32,178 @@ function gridForTotal(total:number){
   return {cols:50, rows:30};
 }
 
-function dist(a:number[], b:number[]){
-  return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
-}
-
-function loadImg(url:string): Promise<HTMLImageElement>{
-  return new Promise((resolve,reject)=>{
-    const img=new Image();
-    img.onload=()=>resolve(img);
-    img.onerror=reject;
-    img.src=url;
-  });
-}
-
-async function avgColor(url:string): Promise<number[]>{
-  const img=await loadImg(url);
-  const canvas=document.createElement('canvas');
-  canvas.width=1; canvas.height=1;
-  const ctx=canvas.getContext('2d');
-  if(!ctx) return [128,128,128];
-  ctx.drawImage(img,0,0,1,1);
-  const d=ctx.getImageData(0,0,1,1).data;
-  return [d[0],d[1],d[2]];
-}
-
-async function targetColors(url:string, cols:number, rows:number): Promise<number[][]>{
-  const img=await loadImg(url);
-  const canvas=document.createElement('canvas');
-  canvas.width=cols; canvas.height=rows;
-  const ctx=canvas.getContext('2d');
-  if(!ctx) return [];
-  ctx.drawImage(img,0,0,cols,rows);
-  const data=ctx.getImageData(0,0,cols,rows).data;
-  const colors:number[][]=[];
-  for(let i=0;i<cols*rows;i++){
-    colors.push([data[i*4],data[i*4+1],data[i*4+2]]);
-  }
-  return colors;
+function clamp(v:number,min=0,max=255){
+  return Math.max(min, Math.min(max, v));
 }
 
 function luminance(c:number[]){
   return (0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]) / 255;
 }
 
-function tileFilter(c:number[]){
-  const l = luminance(c);
-  const brightness = Math.max(0.42, Math.min(1.55, 0.55 + l * 1.25));
-  const contrast = l < 0.35 ? 1.22 : l > 0.72 ? 0.94 : 1.08;
-  return `brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)}) saturate(.78)`;
+function saturation(c:number[]){
+  const max=Math.max(c[0],c[1],c[2]);
+  const min=Math.min(c[0],c[1],c[2]);
+  return max===0 ? 0 : (max-min)/max;
+}
+
+function colorDistancePhotoMosaic(a:PhotoFeature, target:Rgb){
+  const tl = luminance(target);
+  const ts = saturation(target);
+  const dr = a.avg[0]-target[0];
+  const dg = a.avg[1]-target[1];
+  const db = a.avg[2]-target[2];
+
+  // Distanza più vicina alla percezione umana: il verde e la luminosità contano di più.
+  const rgbDist = dr*dr*0.30 + dg*dg*0.58 + db*db*0.22;
+  const lumDist = Math.pow((a.lum - tl) * 255, 2) * 1.55;
+  const satDist = Math.pow((a.sat - ts) * 180, 2) * 0.22;
+
+  return rgbDist + lumDist + satDist;
+}
+
+function loadImg(url:string): Promise<HTMLImageElement>{
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>resolve(img);
+    img.onerror=reject;
+    img.src=url;
+  });
+}
+
+async function photoFeature(url:string, id:string): Promise<PhotoFeature>{
+  const img=await loadImg(url);
+  const canvas=document.createElement('canvas');
+  canvas.width=18;
+  canvas.height=18;
+  const ctx=canvas.getContext('2d', { willReadFrequently:true });
+  if(!ctx) return {id,url,avg:[128,128,128],lum:.5,sat:.2};
+
+  const side=Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+  const sx=Math.max(0,Math.floor(((img.naturalWidth || img.width)-side)/2));
+  const sy=Math.max(0,Math.floor(((img.naturalHeight || img.height)-side)/2));
+  ctx.drawImage(img,sx,sy,side,side,0,0,18,18);
+
+  const data=ctx.getImageData(0,0,18,18).data;
+  let r=0,g=0,b=0,count=0;
+
+  // Media leggermente robusta: ignora pixel quasi bianchi/neri estremi solo se sono pochi dettagli.
+  for(let i=0;i<data.length;i+=4){
+    const pr=data[i], pg=data[i+1], pb=data[i+2];
+    const l=(0.2126*pr+0.7152*pg+0.0722*pb)/255;
+    const weight = l<.04 || l>.97 ? .35 : 1;
+    r+=pr*weight; g+=pg*weight; b+=pb*weight; count+=weight;
+  }
+
+  const avg:Rgb=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];
+  return {id,url,avg,lum:luminance(avg),sat:saturation(avg)};
+}
+
+async function targetColors(url:string, cols:number, rows:number): Promise<Rgb[]>{
+  const img=await loadImg(url);
+  const canvas=document.createElement('canvas');
+  canvas.width=cols;
+  canvas.height=rows;
+  const ctx=canvas.getContext('2d', { willReadFrequently:true });
+  if(!ctx) return [];
+  ctx.drawImage(img,0,0,cols,rows);
+  const data=ctx.getImageData(0,0,cols,rows).data;
+  const colors:Rgb[]=[];
+  for(let i=0;i<cols*rows;i++){
+    colors.push([data[i*4],data[i*4+1],data[i*4+2]]);
+  }
+  return colors;
+}
+
+function chooseBestUnusedCell(feature:PhotoFeature, colors:Rgb[], total:number, used:Set<number>){
+  let best=-1;
+  let bestScore=Number.POSITIVE_INFINITY;
+
+  for(let i=0;i<total;i++){
+    if(used.has(i)) continue;
+    const target=colors[i] || [128,128,128];
+    const score=colorDistancePhotoMosaic(feature,target);
+    if(score<bestScore){
+      bestScore=score;
+      best=i;
+    }
+  }
+
+  return {index:best, score:bestScore};
+}
+
+async function createMosaicTile(url:string, target:Rgb): Promise<string>{
+  const img=await loadImg(url);
+  const size=180;
+  const canvas=document.createElement('canvas');
+  canvas.width=size;
+  canvas.height=size;
+  const ctx=canvas.getContext('2d', { willReadFrequently:true });
+  if(!ctx) return url;
+
+  const iw=img.naturalWidth || img.width;
+  const ih=img.naturalHeight || img.height;
+  const side=Math.min(iw,ih);
+  const sx=Math.max(0,Math.floor((iw-side)/2));
+  const sy=Math.max(0,Math.floor((ih-side)/2));
+
+  ctx.drawImage(img,sx,sy,side,side,0,0,size,size);
+
+  const image=ctx.getImageData(0,0,size,size);
+  const d=image.data;
+
+  let srcLum=0;
+  let count=0;
+  for(let i=0;i<d.length;i+=4){
+    srcLum += (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]);
+    count++;
+  }
+  srcLum = count ? srcLum/count : 128;
+
+  const targetLum = 0.2126*target[0] + 0.7152*target[1] + 0.0722*target[2];
+  const tSat = saturation(target);
+  const preserveTexture = 0.78;
+  const targetStrength = tSat < .12 ? .74 : .66;
+  const originalStrength = 1 - targetStrength;
+
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const pixLum = 0.2126*r + 0.7152*g + 0.0722*b;
+    const detail = (pixLum - srcLum) * preserveTexture;
+
+    // Ricrea la foto partendo dal colore della cella finale e mantenendo luci/ombre della foto originale.
+    const mappedR = clamp(target[0] + detail);
+    const mappedG = clamp(target[1] + detail);
+    const mappedB = clamp(target[2] + detail);
+
+    // Correzione luminosità per non perdere volti/dettagli.
+    const ratio = targetLum / Math.max(22, srcLum);
+    const correctedR = clamp(r * (0.72 + ratio*0.28));
+    const correctedG = clamp(g * (0.72 + ratio*0.28));
+    const correctedB = clamp(b * (0.72 + ratio*0.28));
+
+    d[i]   = clamp(mappedR*targetStrength + correctedR*originalStrength);
+    d[i+1] = clamp(mappedG*targetStrength + correctedG*originalStrength);
+    d[i+2] = clamp(mappedB*targetStrength + correctedB*originalStrength);
+
+    // Micro-contrasto delicato per rendere leggibile la foto dentro la tessera.
+    d[i]   = clamp((d[i]-128)*1.07 + 128);
+    d[i+1] = clamp((d[i+1]-128)*1.07 + 128);
+    d[i+2] = clamp((d[i+2]-128)*1.07 + 128);
+  }
+
+  ctx.putImageData(image,0,0);
+
+  // Velo finale molto leggero sul colore target: aiuta il mosaico a leggere bene da lontano.
+  ctx.globalCompositeOperation='soft-light';
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.globalAlpha=.28;
+  ctx.fillRect(0,0,size,size);
+
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+
+  return canvas.toDataURL('image/jpeg', .82);
 }
 
 export default function ScreenPage(){
@@ -76,13 +219,23 @@ export default function ScreenPage(){
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());
   const usedIndexes=useRef<Set<number>>(new Set());
-  const targetColorRef=useRef<number[][]>([]);
+  const targetColorRef=useRef<Rgb[]>([]);
+  const photoFeatureCache=useRef<Map<string,PhotoFeature>>(new Map());
   const currentRun=useRef(0);
 
   function targetImageUrl(s:any){
     if(!s?.targetFileId) return '';
     const version = s?.target?.updated || Date.now();
     return `/api/image?id=${s.targetFileId}&v=${version}`;
+  }
+
+  async function getFeature(p:Photo){
+    const cached=photoFeatureCache.current.get(p.id);
+    if(cached) return cached;
+    const url=`/api/image?id=${p.id}`;
+    const f=await photoFeature(url,p.id);
+    photoFeatureCache.current.set(p.id,f);
+    return f;
   }
 
   async function fetchStatus(){
@@ -118,21 +271,38 @@ export default function ScreenPage(){
     const available=photos.filter(p=>!assignedIds.current.has(p.id)).slice(0, Math.max(0,total-assignedIds.current.size));
     for(const p of available){
       if(paused || runId !== currentRun.current) break;
-      const url=`/api/image?id=${p.id}`;
-      let c=[128,128,128];
-      try{ c=await avgColor(url); }catch(e){}
-      const colors=targetColorRef.current;
-      let best=-1; let bestD=Number.POSITIVE_INFINITY;
-      for(let i=0;i<total;i++){
-        if(usedIndexes.current.has(i)) continue;
-        const d=colors[i]?dist(c, colors[i]):i;
-        if(d<bestD){bestD=d; best=i;}
+
+      let feature:PhotoFeature;
+      try{
+        feature=await getFeature(p);
+      }catch(e){
+        feature={id:p.id,url:`/api/image?id=${p.id}`,avg:[128,128,128],lum:.5,sat:.2};
       }
-      if(best<0) continue;
+
+      const colors=targetColorRef.current;
+      const best=chooseBestUnusedCell(feature, colors, total, usedIndexes.current);
+      if(best.index<0) continue;
+
+      const targetColor=colors[best.index] || [128,128,128];
+      let modifiedUrl=feature.url;
+      try{
+        modifiedUrl=await createMosaicTile(feature.url, targetColor);
+      }catch(e){}
+
       assignedIds.current.add(p.id);
-      usedIndexes.current.add(best);
-      setTiles(prev=>[...prev,{id:p.id,index:best,order:prev.length+1,url,color:colors[best] || [128,128,128]}]);
-      await new Promise(res=>setTimeout(res,80));
+      usedIndexes.current.add(best.index);
+      setTiles(prev=>[...prev,{
+        id:p.id,
+        index:best.index,
+        order:prev.length+1,
+        url:feature.url,
+        modifiedUrl,
+        color:targetColor,
+        sourceColor:feature.avg,
+        matchScore:best.score
+      }]);
+
+      await new Promise(res=>setTimeout(res,55));
     }
   }
 
@@ -232,9 +402,7 @@ export default function ScreenPage(){
               const t=tileMap.get(i);
               return <div key={i} style={{background:'#222',border:isFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
                 {t && <button className="tileButton" onClick={()=>setSelectedTile(t)} title="Vedi foto">
-                  <img src={t.url} alt="" style={{animation:'pop .45s ease', filter:tileFilter(t.color)}}/>
-                  <span className="tileTint" style={{background:`rgb(${t.color[0]},${t.color[1]},${t.color[2]})`}} />
-                  <span className="tileLight" />
+                  <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
               </div>
             })}
@@ -272,7 +440,6 @@ export default function ScreenPage(){
         <button onClick={restartMosaic}>Riparti</button>
       </div>}
 
-
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
         <div className="tileModalBox" onClick={(e)=>e.stopPropagation()}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}}>
@@ -286,11 +453,7 @@ export default function ScreenPage(){
             </div>
             <div>
               <p className="tileModalTitle">Modificata per il mosaico</p>
-              <div style={{position:'relative',background:'#222',borderRadius:14,overflow:'hidden'}}>
-                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:tileFilter(selectedTile.color)}} />
-                <div style={{position:'absolute',inset:0,background:`rgb(${selectedTile.color[0]},${selectedTile.color[1]},${selectedTile.color[2]})`,mixBlendMode:'multiply',opacity:.72}} />
-                <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.03)'}} />
-              </div>
+              <img src={selectedTile.modifiedUrl} alt="Foto modificata per il mosaico" />
             </div>
           </div>
         </div>
