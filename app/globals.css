@@ -336,3 +336,51 @@ p{font-size:18px;line-height:1.45;color:var(--muted)}.btn{display:inline-flex;wi
   .screenControlBar{left:12px;right:12px;top:12px}
   .screenControlBar button{font-size:13px;padding:10px 12px}
 }
+/* Screen controls final placement */
+.screenBottomControls{
+  position:absolute;
+  bottom:22px;
+  right:28px;
+  left:28px;
+  z-index:20;
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  pointer-events:auto;
+}
+.screenBottomControls button,
+.screenBottomControls a{
+  border:0;
+  border-radius:12px;
+  padding:12px 16px;
+  background:#fff;
+  color:#111;
+  font-weight:800;
+  cursor:pointer;
+  font-size:16px;
+  text-decoration:none;
+}
+.screenBottomControls .danger{
+  background:#9b1c1c;
+  color:white;
+}
+.screenHamburger{
+  position:absolute;
+  top:18px;
+  right:28px;
+  z-index:22;
+}
+@media(max-width:720px){
+  .screenBottomControls{
+    left:12px;
+    right:12px;
+    bottom:12px;
+    justify-content:center;
+  }
+  .screenBottomControls button,
+  .screenBottomControls a{
+    font-size:13px;
+    padding:10px 12px;
+  }
+}

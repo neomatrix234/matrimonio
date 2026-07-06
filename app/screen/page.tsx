@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 type Photo = { id:string; name:string; created:number; size:number };
 type Tile = { id:string; index:number; order:number; url:string };
@@ -60,12 +61,13 @@ export default function ScreenPage(){
   const [isFullscreen,setIsFullscreen]=useState(false);
   const [replayStarted,setReplayStarted]=useState(false);
   const [paused,setPaused]=useState(false);
+  const [menu,setMenu]=useState(false);
 
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());
   const usedIndexes=useRef<Set<number>>(new Set());
   const targetColorRef=useRef<number[][]>([]);
-  const totalRef=useRef(600);
+  const currentRun=useRef(0);
 
   function targetImageUrl(s:any){
     if(!s?.targetFileId) return '';
@@ -74,12 +76,12 @@ export default function ScreenPage(){
   }
 
   async function fetchStatus(){
+    if(paused) return;
     try{
       const r=await fetch('/api/status?x='+Date.now());
       const s=await r.json();
       if(!s.ok) return;
       setStatus(s);
-      totalRef.current=s.totalTiles || 600;
 
       const {cols,rows}=gridForTotal(s.totalTiles || 600);
 
@@ -87,9 +89,9 @@ export default function ScreenPage(){
         targetColorRef.current=await targetColors(targetImageUrl(s), cols, rows);
       }
 
-      if(!paused && !processing.current && targetColorRef.current.length && !replayStarted){
+      if(!processing.current && targetColorRef.current.length && !replayStarted){
         processing.current=true;
-        await addNewPhotos(s.photos || [], s.totalTiles || 600);
+        await addNewPhotos(s.photos || [], s.totalTiles || 600, currentRun.current);
         processing.current=false;
       }
 
@@ -102,9 +104,10 @@ export default function ScreenPage(){
     }catch(e){}
   }
 
-  async function addNewPhotos(photos:Photo[], total:number){
+  async function addNewPhotos(photos:Photo[], total:number, runId:number){
     const available=photos.filter(p=>!assignedIds.current.has(p.id)).slice(0, Math.max(0,total-assignedIds.current.size));
     for(const p of available){
+      if(paused || runId !== currentRun.current) break;
       const url=`/api/image?id=${p.id}`;
       let c=[128,128,128];
       try{ c=await avgColor(url); }catch(e){}
@@ -124,25 +127,31 @@ export default function ScreenPage(){
   }
 
   function stopMosaic(){
+    currentRun.current += 1;
     setPaused(true);
     setReplayStarted(false);
     setFinal(false);
     setCompleteMsg(false);
+    processing.current=false;
   }
 
   function restartMosaic(){
+    currentRun.current += 1;
     setPaused(false);
     setReplayStarted(false);
     setFinal(false);
     setCompleteMsg(false);
     assignedIds.current=new Set();
     usedIndexes.current=new Set();
-    setTiles([]);
     targetColorRef.current=[];
+    setTiles([]);
     setTimeout(()=>fetchStatus(),250);
   }
 
   async function startReplay(total:number){
+    currentRun.current += 1;
+    const runId=currentRun.current;
+    setPaused(false);
     setFinal(false);
     setCompleteMsg(false);
     setReplayStarted(true);
@@ -155,8 +164,10 @@ export default function ScreenPage(){
     const currentPhotos:Photo[]=(s.photos || []).slice(0,total);
     setStatus(s);
 
-    await addNewPhotos(currentPhotos,total);
-    setTimeout(()=>setFinal(true), 1200);
+    await addNewPhotos(currentPhotos,total,runId);
+    if(runId===currentRun.current && !paused){
+      setTimeout(()=>setFinal(true), 1200);
+    }
   }
 
   useEffect(()=>{
@@ -168,7 +179,7 @@ export default function ScreenPage(){
       clearInterval(id);
       document.removeEventListener('fullscreenchange',fs);
     };
-  },[replayStarted,final]);
+  },[replayStarted,final,paused]);
 
   const total=status?.totalTiles || 600;
   const {cols,rows}=gridForTotal(total);
@@ -179,23 +190,25 @@ export default function ScreenPage(){
   const count=tiles.length;
   const pct=Math.min(100,Math.round((count/total)*100));
 
-  // In modalità finale + schermo intero spariscono tutti i testi tecnici e i pulsanti.
-  const cleanFinalFullscreen = isFullscreen && (replayStarted || final);
-
   return (
     <div style={{height:'100vh',background:'#111',color:'#fff',fontFamily:'Arial, sans-serif',overflow:'hidden',position:'relative'}}>
-      <div className="screenControlBar">
-        {isFullscreen && <button onClick={()=>document.exitFullscreen()}>Esci schermo intero</button>}
-        <button className="danger" onClick={stopMosaic}>Interrompi</button>
-        <button onClick={restartMosaic}>Riparti</button>
-      </div>
-      {!cleanFinalFullscreen && <div style={{position:'absolute',top:22,left:28,right:28,display:'flex',justifyContent:'space-between',zIndex:5}}>
+      {!isFullscreen && <>
+        <button className="hamburger screenHamburger" onClick={()=>setMenu(!menu)}>{menu ? '×' : '☰'}</button>
+        {menu && <div className="hamburgerPanel" style={{zIndex:40}}>
+          <Link className="btn secondary" href="/">Home / Upload</Link>
+          <Link className="btn secondary" href="/upload">Upload invitato</Link>
+          <Link className="btn secondary" href="/admin">Area Admin</Link>
+          <Link className="btn secondary" href="/test-upload">Upload test</Link>
+        </div>}
+      </>}
+
+      {!isFullscreen && <div style={{position:'absolute',top:22,left:28,right:88,display:'flex',justifyContent:'space-between',zIndex:5}}>
         <div>
           <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {status?.hasTarget ? 'Foto finale caricata' : 'Carica foto finale da /admin'} · {pct}%
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Foto finale caricata' : 'Carica foto finale da /admin'} · {pct}%
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
@@ -203,21 +216,21 @@ export default function ScreenPage(){
         </div>
       </div>}
 
-      <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:cleanFinalFullscreen ? 0 : 24,boxSizing:'border-box'}}>
+      <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:isFullscreen ? 0 : 24,boxSizing:'border-box'}}>
         <div style={{
           position:'relative',
-          width:cleanFinalFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
-          height:cleanFinalFullscreen ? '100vh' : undefined,
-          aspectRatio:cleanFinalFullscreen ? undefined : `${cols}/${rows}`,
+          width:isFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
+          height:isFullscreen ? '100vh' : undefined,
+          aspectRatio:isFullscreen ? undefined : `${cols}/${rows}`,
           background:'#202020',
-          borderRadius:cleanFinalFullscreen ? 0 : 10,
+          borderRadius:isFullscreen ? 0 : 10,
           overflow:'hidden',
-          boxShadow:cleanFinalFullscreen ? 'none' : '0 12px 50px #0009'
+          boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009'
         }}>
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:cleanFinalFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
+              return <div key={i} style={{background:'#222',border:isFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
                 {t && <img src={t.url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',animation:'pop .45s ease'}}/>}
               </div>
             })}
@@ -226,7 +239,7 @@ export default function ScreenPage(){
             position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
             opacity:final?1:0,transition:'opacity 3s ease',zIndex:3
           }}/>}
-          {completeMsg && !cleanFinalFullscreen && <div style={{
+          {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
           }}>MOSAICO COMPLETO</div>}
@@ -235,11 +248,11 @@ export default function ScreenPage(){
 
       {final && <div style={{
         position:'absolute',
-        bottom: cleanFinalFullscreen ? 42 : 18,
+        bottom: isFullscreen ? 42 : 86,
         left:0,
         right:0,
         textAlign:'center',
-        fontSize: cleanFinalFullscreen ? 'clamp(28px,4vw,56px)' : 28,
+        fontSize: isFullscreen ? 'clamp(28px,4vw,56px)' : 28,
         fontWeight:800,
         textShadow:'0 3px 18px #000',
         zIndex:6,
@@ -248,9 +261,11 @@ export default function ScreenPage(){
         Grazie per aver costruito con noi questo ricordo.
       </div>}
 
-      {!isFullscreen && <div style={{position:'absolute',bottom:22,right:28,display:'flex',gap:10,zIndex:10}}>
-        <button onClick={()=>startReplay(total)} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Replay finale</button>
-        <button onClick={()=>document.documentElement.requestFullscreen()} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Schermo intero</button>
+      {!isFullscreen && <div className="screenBottomControls">
+        <button onClick={()=>startReplay(total)}>Replay finale</button>
+        <button onClick={()=>document.documentElement.requestFullscreen()}>Schermo intero</button>
+        <button className="danger" onClick={stopMosaic}>Interrompi</button>
+        <button onClick={restartMosaic}>Riparti</button>
       </div>}
 
       <style>{`@keyframes pop{0%{opacity:0;transform:scale(.75)}100%{opacity:1;transform:scale(1)}}`}</style>

@@ -39,7 +39,17 @@ export default function TestUploadPage(){
   const [result,setResult]=useState<any>(null);
   const [err,setErr]=useState('');
 
-  useEffect(()=>{ const p=sessionStorage.getItem('fm_admin_password'); if(p){setPassword(p); setLogged(true);} },[]);
+  useEffect(()=>{
+    const p=sessionStorage.getItem('fm_admin_password');
+    if(p){setPassword(p); setLogged(true);}
+    const clearAdmin = () => { sessionStorage.removeItem('fm_admin_password'); };
+    window.addEventListener('pagehide', clearAdmin);
+    window.addEventListener('beforeunload', clearAdmin);
+    return () => {
+      window.removeEventListener('pagehide', clearAdmin);
+      window.removeEventListener('beforeunload', clearAdmin);
+    };
+  },[]);
 
   async function login(){
     setErr('');

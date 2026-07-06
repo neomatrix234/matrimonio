@@ -99,3 +99,12 @@ Novità:
 - Da Admin regoli in tempo reale trasparenza box e oscuramento dello sfondo, senza popup di conferma.
 - La password default non viene più mostrata nella pagina login Admin.
 - Su `/screen`, anche in schermo intero, ci sono pulsanti per uscire da schermo intero, interrompere e ripartire.
+
+
+## Aggiornamento sicurezza Admin e schermo
+
+- L'accesso Admin viene dimenticato quando cambi pagina o chiudi/ricarichi la pagina.
+- Se un utente tocca il telefono/PC dopo che sei uscito da Admin, dovrà reinserire la password.
+- In `/screen`, fuori dallo schermo intero, i pulsanti sono tutti in basso insieme e non si sovrappongono.
+- In schermo intero non si vede nessun indicatore, menu o pulsante.
+- Fuori dallo schermo intero si vede il menu hamburger per muoversi tra le sezioni.

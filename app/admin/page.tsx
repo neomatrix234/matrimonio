@@ -37,7 +37,17 @@ export default function AdminPage(){
   const [bgPreview,setBgPreview]=useState('');
   const [bgInfo,setBgInfo]=useState('');
 
-  useEffect(()=>{ const p=sessionStorage.getItem('fm_admin_password'); if(p){setPassword(p); setLogged(true); load(p);} },[]);
+  useEffect(()=>{
+    const p=sessionStorage.getItem('fm_admin_password');
+    if(p){setPassword(p); setLogged(true); load(p);}
+    const clearAdmin = () => { sessionStorage.removeItem('fm_admin_password'); };
+    window.addEventListener('pagehide', clearAdmin);
+    window.addEventListener('beforeunload', clearAdmin);
+    return () => {
+      window.removeEventListener('pagehide', clearAdmin);
+      window.removeEventListener('beforeunload', clearAdmin);
+    };
+  },[]);
 
   async function login(){
     setErr(''); setBusyText('Accesso admin...'); setBusy(true);
@@ -147,10 +157,10 @@ export default function AdminPage(){
     <main className="container">
       <button className="hamburger" onClick={()=>setMenu(!menu)}>{menu?'×':'☰'}</button>
       {menu&&<div className="hamburgerPanel">
-        <Link className="btn secondary" href="/">Home</Link>
-        <Link className="btn secondary" href="/upload">Upload invitato</Link>
-        <Link className="btn secondary" href="/test-upload">Upload test multiplo</Link>
-        <Link className="btn secondary" href="/screen">Schermo mosaico</Link>
+        <Link className="btn secondary" href="/" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Home</Link>
+        <Link className="btn secondary" href="/upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload invitato</Link>
+        <Link className="btn secondary" href="/test-upload" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Upload test multiplo</Link>
+        <Link className="btn secondary" href="/screen" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Schermo mosaico</Link>
         <button className="btn danger" onClick={logout}>Esci Admin</button>
       </div>}
 
