@@ -734,3 +734,170 @@ pre{
     padding:16px 28px;
   }
 }
+
+/* Correzione splash definitiva precisa */
+.splashCompose{
+  background:#fffdf9 !important;
+}
+.splashLayer{
+  background-image:url('/splash-wedding.png') !important;
+  background-size:cover !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+}
+.splashLayerFull{
+  animation:fullBaseExact 1.35s ease .15s forwards !important;
+  opacity:0;
+}
+.splashLayerVeilTop{
+  clip-path:polygon(0 0, 43% 0, 31% 34%, 0 49%) !important;
+  animation:pieceExact 1.05s ease .90s forwards !important;
+}
+.splashLayerGrassTop{
+  clip-path:polygon(50% 0, 100% 0, 100% 43%, 53% 43%) !important;
+  animation:pieceExact 1.05s ease 1.38s forwards !important;
+}
+.splashLayerCenterText{
+  clip-path:polygon(12% 27%, 88% 27%, 88% 61%, 12% 61%) !important;
+  animation:pieceExact 1.15s ease 1.95s forwards !important;
+}
+.splashLayerFlowerBottom{
+  clip-path:polygon(0 55%, 64% 55%, 58% 100%, 0 100%) !important;
+  animation:pieceExact 1.1s ease 2.68s forwards !important;
+}
+.splashLayerVeilBottom{
+  clip-path:polygon(50% 57%, 100% 50%, 100% 100%, 44% 100%) !important;
+  animation:pieceExact 1.1s ease 3.08s forwards !important;
+}
+
+/* Layer pieno al 100%: alla fine l’immagine torna identica */
+@keyframes fullBaseExact{
+  0%{opacity:0; filter:brightness(1.7) saturate(.08) blur(18px); transform:scale(1.025)}
+  72%{opacity:.42; filter:brightness(1.25) saturate(.55) blur(8px); transform:scale(1.01)}
+  100%{opacity:1; filter:brightness(1) saturate(1) blur(0); transform:scale(1)}
+}
+@keyframes pieceExact{
+  0%{opacity:0; transform:scale(1.025); filter:brightness(1.7) saturate(.08) blur(16px)}
+  100%{opacity:1; transform:scale(1); filter:brightness(1) saturate(1) blur(0)}
+}
+
+/* Pulsante invisibile ma cliccabile sulla scritta originale “Oggi sposi” */
+.splashTodayButton{
+  top:48.8% !important;
+  left:50% !important;
+  min-width:0 !important;
+  width:clamp(118px, 34vw, 198px) !important;
+  height:clamp(28px, 7vw, 43px) !important;
+  padding:0 !important;
+  border-radius:999px !important;
+  border:1px solid rgba(181,135,56,.18) !important;
+  background:rgba(255,250,241,.035) !important;
+  color:transparent !important;
+  font-size:0 !important;
+  line-height:0 !important;
+  box-shadow:
+    0 5px 12px rgba(133,101,36,.08),
+    inset 0 1px 0 rgba(255,255,255,.26),
+    inset 0 -2px 0 rgba(181,135,56,.06) !important;
+  text-shadow:none !important;
+  backdrop-filter:blur(.15px);
+}
+.splashTodayInvisibleText{
+  opacity:0;
+  pointer-events:none;
+  font-size:0;
+}
+.splashTodayButton.ready{
+  animation:ctaBlinkPrecise 1.7s ease-in-out infinite !important;
+}
+.splashTodayButton.ready:hover{
+  transform:translate(-50%,-50%) scale(1.008) !important;
+}
+.splashTodayButton.ready:active{
+  transform:translate(-50%,-48.6%) scale(.99) !important;
+}
+@keyframes ctaBlinkPrecise{
+  0%,100%{
+    opacity:.72;
+    box-shadow:
+      0 5px 12px rgba(133,101,36,.07),
+      inset 0 1px 0 rgba(255,255,255,.24),
+      inset 0 -2px 0 rgba(181,135,56,.06);
+  }
+  50%{
+    opacity:1;
+    box-shadow:
+      0 9px 20px rgba(181,135,56,.16),
+      0 0 12px rgba(255,235,185,.48),
+      inset 0 1px 0 rgba(255,255,255,.36),
+      inset 0 -2px 0 rgba(181,135,56,.10);
+  }
+}
+
+/* Box caricamento in stile oro/avorio, quasi trasparente, fade-in lento dal centro */
+.uploadPanel.simpleUpload{
+  background:rgba(255,250,241,.115) !important;
+  border:1px solid rgba(181,135,56,.22) !important;
+  box-shadow:
+    0 18px 48px rgba(112,83,34,.12),
+    inset 0 1px 0 rgba(255,255,255,.38),
+    inset 0 -3px 0 rgba(181,135,56,.055) !important;
+  backdrop-filter:blur(3.5px) saturate(1.04);
+  color:#8e692b;
+}
+.uploadPanelAnimated.hidden{
+  opacity:0 !important;
+  visibility:hidden !important;
+  transform:scale(.78) !important;
+  pointer-events:none !important;
+}
+.uploadPanelAnimated.visible{
+  opacity:1 !important;
+  visibility:visible !important;
+  pointer-events:auto !important;
+  animation:uploaderBoxWeddingInSlow 1.25s cubic-bezier(.16,.95,.24,1) forwards;
+}
+.uploadPanel.simpleUpload .uploadTitle{
+  font-family:Georgia, 'Times New Roman', serif;
+  color:#9d7430;
+  text-shadow:0 1px 0 rgba(255,255,255,.65), 0 0 12px rgba(255,236,191,.28);
+  letter-spacing:.02em;
+}
+.uploadPanel.simpleUpload .btn{
+  background:linear-gradient(180deg, rgba(194,151,67,.86), rgba(139,99,32,.86)) !important;
+  color:#fffaf0 !important;
+  border:1px solid rgba(255,238,191,.42) !important;
+  border-radius:999px !important;
+  box-shadow:
+    0 9px 20px rgba(112,83,34,.18),
+    inset 0 1px 0 rgba(255,255,255,.48),
+    inset 0 -4px 0 rgba(82,57,18,.16) !important;
+  text-shadow:0 1px 0 rgba(0,0,0,.14);
+  font-family:Georgia, 'Times New Roman', serif;
+}
+.uploadPanel.simpleUpload .btn.secondary{
+  background:rgba(255,250,241,.20) !important;
+  color:#956c2b !important;
+  border:1px solid rgba(181,135,56,.24) !important;
+}
+.uploadPanel.simpleUpload .preview{
+  border-radius:20px;
+  border:1px solid rgba(181,135,56,.22);
+  box-shadow:0 12px 28px rgba(112,83,34,.10);
+}
+@keyframes uploaderBoxWeddingInSlow{
+  0%{opacity:0; transform:scale(.78); filter:blur(8px)}
+  45%{opacity:.58; transform:scale(1.025); filter:blur(2px)}
+  100%{opacity:1; transform:scale(1); filter:blur(0)}
+}
+
+@media (max-width:720px){
+  .splashTodayButton{
+    top:48.9% !important;
+    width:clamp(108px, 35vw, 178px) !important;
+    height:clamp(27px, 7vw, 40px) !important;
+  }
+  .uploadPanel.simpleUpload{
+    background:rgba(255,250,241,.10) !important;
+  }
+}

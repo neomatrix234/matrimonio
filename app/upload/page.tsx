@@ -158,7 +158,7 @@ export default function UploadPage() {
   const bgPosition = `${bgLayout.posX}% ${bgLayout.posY}%`;
 
   return (
-    <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)', backgroundSize:bgSize, backgroundPosition:bgPosition}}>
+    <main className="uploadFull" style={{backgroundImage:showUploader ? `url(/splash-wedding.png)` : (bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'), backgroundSize:showUploader ? 'cover' : bgSize, backgroundPosition:showUploader ? 'center' : bgPosition}}>
       <div className="bgDim" style={{opacity:bgDark}} />
 
       {showSplash && <div className={`splashCompose ${showUploader ? 'fadeOut' : ''}`}>
@@ -172,9 +172,9 @@ export default function UploadPage() {
         <button
           className={`splashTodayButton ${splashReady ? 'ready' : ''}`}
           onClick={enterUploader}
-          aria-label="Apri caricamento foto"
+          aria-label="Oggi sposi - apri caricamento foto"
         >
-          Oggi sposi
+          <span className="splashTodayInvisibleText">Oggi sposi</span>
         </button>
       </div>}
 

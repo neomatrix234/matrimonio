@@ -181,3 +181,13 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Al termine compare il pulsante 3D lampeggiante `Oggi sposi`.
 - Solo premendo `Oggi sposi` si apre il box di caricamento con fade-in.
 - Il box `Carica foto` resta quasi trasparente di default.
+
+
+## Correzione splash/pulsante/box
+
+- Alla fine dell’animazione l’immagine viene ricreata intera e identica.
+- Il click è posizionato esattamente sulla scritta originale `Oggi sposi`.
+- Non viene aggiunta una scritta più grande sopra l’immagine.
+- Il box caricamento entra lentamente dal centro con fade-in.
+- Il box è quasi trasparente, così si vedono ancora le scritte e l’immagine sotto.
+- Pulsanti e testi del box sono in stile oro/avorio.
