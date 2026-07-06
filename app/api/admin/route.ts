@@ -23,6 +23,15 @@ export async function POST(req: NextRequest) {
       payload.panelOpacity = Number(body.panelOpacity);
     } else if (action === 'setBackgroundDarkness') {
       payload.backgroundDarkness = Number(body.backgroundDarkness);
+    } else if (action === 'setSplashText') {
+      payload.line1 = String(body.line1 || '');
+      payload.line2 = String(body.line2 || '');
+      payload.line3 = String(body.line3 || '');
+    } else if (action === 'setBackgroundLayout') {
+      payload.fit = String(body.fit || 'contain');
+      payload.posX = Number(body.posX);
+      payload.posY = Number(body.posY);
+      payload.scale = Number(body.scale);
     } else if (action === 'uploadTarget' || action === 'uploadBackground') {
       payload.imageBase64 = String(body.imageBase64 || '');
       if (!payload.imageBase64) return NextResponse.json({ ok:false, error:'Immagine mancante' }, { status:400 });

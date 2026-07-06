@@ -36,6 +36,13 @@ export default function AdminPage(){
   const [bgBase64,setBgBase64]=useState('');
   const [bgPreview,setBgPreview]=useState('');
   const [bgInfo,setBgInfo]=useState('');
+  const [splashLine1,setSplashLine1]=useState('Ester & Elia');
+  const [splashLine2,setSplashLine2]=useState('Oggi sposi');
+  const [splashLine3,setSplashLine3]=useState('22/08/2026');
+  const [bgFit,setBgFit]=useState('contain');
+  const [bgPosX,setBgPosX]=useState(50);
+  const [bgPosY,setBgPosY]=useState(50);
+  const [bgScale,setBgScale]=useState(100);
 
   useEffect(()=>{
     const p=sessionStorage.getItem('fm_admin_password');
@@ -55,6 +62,11 @@ export default function AdminPage(){
     msgTimer.current = setTimeout(()=>setMsg(''), 1500);
   }
 
+  function applyStatusToAdmin(st:any){
+    applyStatusToAdmin(st);
+    if(st?.backgroundLayout){ setBgFit(st.backgroundLayout.fit || 'contain'); setBgPosX(Number(st.backgroundLayout.posX ?? 50)); setBgPosY(Number(st.backgroundLayout.posY ?? 50)); setBgScale(Number(st.backgroundLayout.scale ?? 100)); }
+  }
+
   async function login(){
     setErr(''); setBusyText('Accesso admin...'); setBusy(true);
     try{
@@ -63,7 +75,9 @@ export default function AdminPage(){
       if(!r.ok||!d.ok) throw new Error(d.error||'Password non valida');
       sessionStorage.setItem('fm_admin_password',password);
       setLogged(true);
-      setData(d.status || d);
+      const st = d.status || d;
+      setData(st);
+      applyStatusToAdmin(st);
       showAdminMsg('Accesso effettuato.');
     }catch(e:any){setErr(e?.message||'Errore accesso');}
     finally{setBusy(false);}
@@ -77,6 +91,7 @@ export default function AdminPage(){
       const d=await r.json();
       if(!r.ok||!d.ok) throw new Error(d.error||'Errore');
       setData(d);
+      applyStatusToAdmin(d);
     }catch(e:any){setErr(e?.message||'Errore caricamento');}
   }
 
@@ -108,6 +123,27 @@ export default function AdminPage(){
       const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setBackgroundDarkness',adminPassword:password,backgroundDarkness:v})});
       const d=await r.json();
       if(d?.ok) setData(d.status||d);
+    }catch{}
+  }
+
+  async function saveBackgroundLayout(next:any = {}){
+    const fit = next.fit ?? bgFit;
+    const posX = next.posX ?? bgPosX;
+    const posY = next.posY ?? bgPosY;
+    const scale = next.scale ?? bgScale;
+    setBgFit(fit); setBgPosX(Number(posX)); setBgPosY(Number(posY)); setBgScale(Number(scale));
+    try{
+      const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setBackgroundLayout',adminPassword:password,fit,posX, posY, scale})});
+      const d=await r.json();
+      if(d?.ok) setData(d.status||d);
+    }catch{}
+  }
+
+  async function saveSplashText(){
+    setBusyText('Salvo testi splash...');
+    try{
+      await adminAction('setSplashText',{line1:splashLine1,line2:splashLine2,line3:splashLine3});
+      showAdminMsg('Testi splash aggiornati.');
     }catch{}
   }
 
@@ -155,6 +191,8 @@ export default function AdminPage(){
 
   const pct=data?Math.min(100,Math.round((data.receivedCount/data.totalTiles)*100)):0;
   const bgUrl=data?.uploadBackgroundFileId?`/api/image?id=${data.uploadBackgroundFileId}&v=${data?.uploadBackground?.updated || Date.now()}`:'';
+  const previewBgSize = bgFit === 'manual' ? `${bgScale}% auto` : bgFit;
+  const previewBgPosition = `${bgPosX}% ${bgPosY}%`;
   const targetUrl=data?.targetFileId?`/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`:'';
   const opacity=Number(data?.panelOpacity ?? 0.10);
   const bgDark=Number(data?.backgroundDarkness ?? 0.18);
@@ -223,13 +261,42 @@ export default function AdminPage(){
         <div className="spacer"/><button className="btn" disabled={busy||!bgBase64} onClick={uploadBackground}>Aggiorna sfondo</button>
         <div className="spacer"/><button className="btn danger" disabled={busy||!data?.hasUploadBackground} onClick={clearBackground}>Cancella sfondo</button>
 
-        <div className="spacer"/><h2>5. Test e schermo</h2>
+        <div className="spacer"/><h2>5. Adatta sfondo su smartphone</h2>
+        <p>Qui vedi l’anteprima verticale come su telefono. Se lo sfondo è troppo grande, usa “Contieni” o regola la scala manuale.</p>
+        <div className="gridBtns">
+          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'contain'})}>Contieni</button>
+          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'cover'})}>Riempi</button>
+          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'manual'})}>Manuale</button>
+        </div>
+        <div className="spacer"/>
+        <label><b>Posizione orizzontale</b></label>
+        <input className="field" type="range" min="0" max="100" step="1" value={bgPosX} onChange={e=>saveBackgroundLayout({posX:Number(e.target.value), fit:bgFit})}/>
+        <label><b>Posizione verticale</b></label>
+        <input className="field" type="range" min="0" max="100" step="1" value={bgPosY} onChange={e=>saveBackgroundLayout({posY:Number(e.target.value), fit:bgFit})}/>
+        <label><b>Scala manuale</b></label>
+        <input className="field" type="range" min="30" max="260" step="1" value={bgScale} onChange={e=>saveBackgroundLayout({scale:Number(e.target.value), fit:'manual'})}/>
+        <div className="phoneBgPreview" style={{backgroundImage:bgUrl?`url(${bgUrl})`:'linear-gradient(135deg,#6d5b4b,#201a16)', backgroundSize:previewBgSize, backgroundPosition:previewBgPosition}}>
+          <div className="bgDim" style={{opacity:bgDark}} />
+          <div className="phoneBgPreviewBox" style={{background:`rgba(255,255,255,${opacity})`}}>Carica foto</div>
+        </div>
+
+        <div className="spacer"/><h2>6. Test e schermo</h2>
         <Link className="btn secondary" href="/test-upload">Upload multiplo per test</Link>
         <div className="spacer"/><Link className="btn secondary" href="/screen">Apri schermo mosaico</Link>
         <div className="spacer"/><button className="btn secondary" onClick={()=>load()}>Aggiorna stato</button>
         <div className="spacer"/><button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Reset mosaico: cancella solo foto invitati</button>
 
-        <div className="spacer"/><h2>6. Cambia password Admin</h2>
+        <div className="spacer"/><h2>7. Testi splash screen</h2>
+        <p>Questi testi appaiono per 5 secondi prima della pagina di caricamento.</p>
+        <input className="field" value={splashLine1} onChange={e=>setSplashLine1(e.target.value)} placeholder="Prima riga"/>
+        <div className="spacer"/>
+        <input className="field" value={splashLine2} onChange={e=>setSplashLine2(e.target.value)} placeholder="Seconda riga"/>
+        <div className="spacer"/>
+        <input className="field" value={splashLine3} onChange={e=>setSplashLine3(e.target.value)} placeholder="Terza riga"/>
+        <div className="spacer"/>
+        <button className="btn" disabled={busy} onClick={saveSplashText}>Salva testi splash</button>
+
+        <div className="spacer"/><h2>8. Cambia password Admin</h2>
         <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin" onKeyDown={(e)=>{if(e.key==='Enter' && newPassword.length>=6) changePassword();}}/>
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
 

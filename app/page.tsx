@@ -40,7 +40,10 @@ export default function UploadPage() {
   const [bgUrl,setBgUrl]=useState('');
   const [opacity,setOpacity]=useState(0.10);
   const [bgDark,setBgDark]=useState(0.18);
+  const [bgLayout,setBgLayout]=useState({fit:'contain',posX:50,posY:50,scale:100});
   const [notice,setNotice]=useState('');
+  const [showSplash,setShowSplash]=useState(true);
+  const [splashText,setSplashText]=useState({line1:'Ester & Elia',line2:'Oggi sposi',line3:'22/08/2026'});
 
   function resetToInitial(){
     setFile(null);
@@ -65,8 +68,10 @@ export default function UploadPage() {
       try{
         const r = await fetch('/api/status?x=' + Date.now());
         const d = await r.json();
+        if(d?.splashText) setSplashText(d.splashText);
         if(d?.panelOpacity !== undefined) setOpacity(Number(d.panelOpacity));
         if(d?.backgroundDarkness !== undefined) setBgDark(Number(d.backgroundDarkness));
+        if(d?.backgroundLayout) setBgLayout(d.backgroundLayout);
         if(d?.uploadBackgroundFileId){
           const version = d?.uploadBackground?.updated || Date.now();
           setBgUrl(`/api/image?id=${d.uploadBackgroundFileId}&v=${version}`);
@@ -74,7 +79,8 @@ export default function UploadPage() {
       }catch{}
     }
     loadBg();
-    return () => { if(noticeTimer.current) clearTimeout(noticeTimer.current); };
+    const splashTimer = setTimeout(()=>setShowSplash(false), 5000);
+    return () => { clearTimeout(splashTimer); if(noticeTimer.current) clearTimeout(noticeTimer.current); };
   }, []);
 
   async function onFileChange(e:React.ChangeEvent<HTMLInputElement>) {
@@ -136,9 +142,22 @@ export default function UploadPage() {
     }
   }
 
+  const bgSize = bgLayout.fit === 'manual' ? `${bgLayout.scale}% auto` : bgLayout.fit;
+  const bgPosition = `${bgLayout.posX}% ${bgLayout.posY}%`;
+
   return (
-    <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
+    <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)', backgroundSize:bgSize, backgroundPosition:bgPosition}}>
       <div className="bgDim" style={{opacity:bgDark}} />
+
+      {showSplash && <div className="splashScreen">
+        <img className="splashImage" src="/splash-wedding.png" alt="Ester & Elia" />
+        <div className="splashGlow" />
+        <div className="splashText">
+          <div className="splashLine1">{splashText.line1}</div>
+          <div className="splashLine2">{splashText.line2}</div>
+          <div className="splashLine3">{splashText.line3}</div>
+        </div>
+      </div>}
 
       {busy && <div className="spinnerOverlay">
         <div className="spinner" />

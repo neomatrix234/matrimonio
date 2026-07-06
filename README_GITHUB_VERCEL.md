@@ -148,3 +148,27 @@ Corretto errore TypeScript in `/app/screen/page.tsx`: variabile `selectedTile` d
 ## Fix build Vercel 2
 
 Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera ora usa `selectedTile.color` invece di `t.color`.
+
+
+## Splash screen matrimonio
+
+- Aggiunto splash screen animato di 5 secondi prima della pagina di caricamento.
+- Usa la seconda immagine generata: `public/splash-wedding.png`.
+- Testi iniziali:
+  - Ester & Elia
+  - Oggi sposi
+  - 22/08/2026
+- Da `/admin` puoi modificare le tre righe dello splash.
+
+
+## Sfondo smartphone e splash
+
+- Lo splash screen è forzato all’apertura per 5 secondi prima del box di caricamento.
+- Il box “Carica foto” ha trasparenza quasi minima di default.
+- Da Admin puoi impostare come lo sfondo home/upload si presenta su smartphone:
+  - Contieni
+  - Riempi
+  - Manuale
+  - posizione X/Y
+  - scala manuale
+- Da Admin vedi un’anteprima verticale tipo smartphone.
