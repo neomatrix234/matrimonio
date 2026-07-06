@@ -16,17 +16,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'setTotal') {
       payload.totalTiles = Number(body.totalTiles);
-    } else if (action === 'uploadTarget') {
+    } else if (action === 'uploadTarget' || action === 'uploadBackground') {
       payload.imageBase64 = String(body.imageBase64 || '');
       if (!payload.imageBase64) {
-        return NextResponse.json({ ok:false, error:'Foto finale mancante' }, { status:400 });
+        return NextResponse.json({ ok:false, error:'Immagine mancante' }, { status:400 });
       }
-    } else if (action === 'uploadBackground') {
-      payload.imageBase64 = String(body.imageBase64 || '');
-      if (!payload.imageBase64) {
-        return NextResponse.json({ ok:false, error:'Immagine sfondo mancante' }, { status:400 });
-      }
-    } else if (action === 'clearGuestPhotos') {
+    } else if (action === 'clearGuestPhotos' || action === 'clearTarget' || action === 'clearBackground') {
       // ok
     } else {
       return NextResponse.json({ ok:false, error:'Azione admin non valida' }, { status:400 });

@@ -45,7 +45,8 @@ export default function UploadPage() {
         const r = await fetch('/api/status?x=' + Date.now());
         const d = await r.json();
         if(d?.uploadBackgroundFileId){
-          setBgUrl(`/api/image?id=${d.uploadBackgroundFileId}`);
+          const version = d?.uploadBackground?.updated || Date.now();
+          setBgUrl(`/api/image?id=${d.uploadBackgroundFileId}&v=${version}`);
         }
       }catch{}
     }

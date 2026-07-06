@@ -44,3 +44,18 @@ La pagina `/upload` ora è a pieno schermo, senza scroll verticale, con titolo c
 Da `/admin` puoi caricare:
 - foto finale del mosaico;
 - immagine di sfondo della pagina caricamento invitati.
+
+
+## Aggiornamento gestione immagini speciali
+
+- Le foto degli invitati sono le uniche ridotte e hanno prefisso `foto_mosaico_`.
+- La foto finale da riprodurre viene salvata con nome fisso `__TARGET_MOSAICO.jpg` e resta in dimensione originale.
+- Lo sfondo home/caricamento viene salvato con nome fisso `__UPLOAD_BACKGROUND.jpg` e resta in dimensione originale.
+- Il reset mosaico cancella solo le foto degli invitati.
+- Da `/admin` puoi vedere cosa è caricato, dimensione dei file speciali e cancellare separatamente foto finale e sfondo.
+- Lo sfondo viene usato sia in `/` sia in `/upload`.
+
+
+## Schermo finale pulito
+
+Su `/screen`, quando parte il replay finale e la pagina è a schermo intero, vengono nascosti contatori e pulsanti. Restano solo il mosaico/foto finale e la frase di ringraziamento.

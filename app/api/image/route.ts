@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': resp.headers.get('content-type') || 'image/jpeg',
-        'Cache-Control': 'public, max-age=60'
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache'
       }
     });
   } catch (err:any) {

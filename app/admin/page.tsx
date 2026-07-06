@@ -3,29 +3,27 @@ import { useEffect, useState } from 'react';
 
 const options = [600, 800, 1000, 1200, 1500];
 
-function loadImage(file: File): Promise<HTMLImageElement> {
+function readOriginalFile(file: File): Promise<{base64:string;previewUrl:string;sizeKb:number}> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = reject;
-    img.src = url;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const base64 = dataUrl.split(',')[1] || '';
+      resolve({
+        base64,
+        previewUrl: dataUrl,
+        sizeKb: Math.round((base64.length * 0.75) / 1024)
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
   });
 }
 
-async function compressWide(file: File, maxSide = 1400, quality = 0.86): Promise<{base64:string;previewUrl:string;sizeKb:number}> {
-  const img = await loadImage(file);
-  const ratio = img.naturalWidth > img.naturalHeight ? maxSide / img.naturalWidth : maxSide / img.naturalHeight;
-  const w = Math.round(img.naturalWidth * Math.min(1, ratio));
-  const h = Math.round(img.naturalHeight * Math.min(1, ratio));
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas non disponibile.');
-  ctx.drawImage(img, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', quality);
-  const base64 = dataUrl.split(',')[1] || '';
-  return { base64, previewUrl: dataUrl, sizeKb: Math.round((base64.length * 0.75) / 1024) };
+function kb(size:number){
+  if(!size) return '0 KB';
+  if(size < 1024*1024) return `${Math.round(size/1024)} KB`;
+  return `${(size/(1024*1024)).toFixed(1)} MB`;
 }
 
 export default function AdminPage(){
@@ -55,11 +53,9 @@ export default function AdminPage(){
   async function setTotal(n:number){
     setBusy(true); setErr(''); setMsg('');
     try{
-      const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setTotal',totalTiles:n})});
-      const d=await r.json();
-      if(!r.ok||!d.ok) throw new Error(d.error||'Errore');
+      const d = await adminAction('setTotal',{totalTiles:n}, false);
       setData(d); setMsg(`Obiettivo impostato a ${n} foto/tessere.`);
-    }catch(e:any){setErr(e?.message||'Errore salvataggio');}
+    }catch{}
     finally{setBusy(false);}
   }
 
@@ -69,11 +65,11 @@ export default function AdminPage(){
     if(!file) return;
     try{
       setBusy(true);
-      const r=await compressWide(file, 1400, 0.86);
+      const r=await readOriginalFile(file);
       setTargetBase64(r.base64);
       setTargetPreview(r.previewUrl);
-      setTargetInfo(`Foto finale pronta, circa ${r.sizeKb} KB.`);
-    }catch(e:any){setErr(e?.message||'Errore preparazione foto finale');}
+      setTargetInfo(`Foto finale pronta in dimensione originale, circa ${r.sizeKb} KB.`);
+    }catch(e:any){setErr(e?.message||'Errore lettura foto finale');}
     finally{setBusy(false);}
   }
 
@@ -83,31 +79,34 @@ export default function AdminPage(){
     if(!file) return;
     try{
       setBusy(true);
-      const r=await compressWide(file, 1600, 0.82);
+      const r=await readOriginalFile(file);
       setBgBase64(r.base64);
       setBgPreview(r.previewUrl);
-      setBgInfo(`Sfondo pronto, circa ${r.sizeKb} KB.`);
-    }catch(e:any){setErr(e?.message||'Errore preparazione sfondo');}
+      setBgInfo(`Sfondo pronto in dimensione originale, circa ${r.sizeKb} KB.`);
+    }catch(e:any){setErr(e?.message||'Errore lettura sfondo');}
     finally{setBusy(false);}
   }
 
-  async function adminAction(action:string, extra:any = {}){
-    setBusy(true); setErr(''); setMsg('');
+  async function adminAction(action:string, extra:any = {}, manageBusy = true){
+    if(manageBusy) setBusy(true);
+    setErr(''); setMsg('');
     try{
       const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});
       const d=await r.json();
       if(!r.ok||!d.ok) throw new Error(d.error||'Errore');
-      setData(d);
-      return d;
+      const newStatus = d.status || d;
+      setData(newStatus);
+      return newStatus;
     }catch(e:any){setErr(e?.message||'Errore'); throw e;}
-    finally{setBusy(false);}
+    finally{if(manageBusy) setBusy(false);}
   }
 
   async function uploadTarget(){
     if(!targetBase64){setErr('Scegli prima la foto finale.'); return;}
     try{
       await adminAction('uploadTarget',{imageBase64:targetBase64});
-      setMsg('Foto finale caricata. Verrà mostrata solo alla fine del mosaico.');
+      setMsg('Foto finale caricata in dimensione originale. Verrà mostrata solo alla fine del mosaico.');
+      setTargetBase64('');
     }catch{}
   }
 
@@ -115,7 +114,8 @@ export default function AdminPage(){
     if(!bgBase64){setErr('Scegli prima l’immagine di sfondo.'); return;}
     try{
       await adminAction('uploadBackground',{imageBase64:bgBase64});
-      setMsg('Sfondo pagina caricamento aggiornato.');
+      setMsg('Sfondo pagina home/caricamento aggiornato in dimensione originale.');
+      setBgBase64('');
     }catch{}
   }
 
@@ -123,7 +123,25 @@ export default function AdminPage(){
     if(!confirm('Cancellare tutte le foto degli invitati da Google Drive? La foto finale e lo sfondo restano.')) return;
     try{
       const d = await adminAction('clearGuestPhotos');
-      setMsg(`Foto cancellate: ${d.trashed || 0}.`);
+      setMsg(`Foto invitati cancellate: ${d.trashed || 0}. Foto finale e sfondo NON cancellati.`);
+      await load();
+    }catch{}
+  }
+
+  async function clearTarget(){
+    if(!confirm('Cancellare la foto finale del mosaico?')) return;
+    try{
+      await adminAction('clearTarget');
+      setMsg('Foto finale cancellata.');
+      await load();
+    }catch{}
+  }
+
+  async function clearBackground(){
+    if(!confirm('Cancellare lo sfondo della pagina home/caricamento?')) return;
+    try{
+      await adminAction('clearBackground');
+      setMsg('Sfondo caricamento cancellato.');
       await load();
     }catch{}
   }
@@ -135,35 +153,46 @@ export default function AdminPage(){
     <main className="container">
       <section className="card">
         <h1>Admin fotomosaico</h1>
-        <p>Per 180 invitati consiglio di partire da <b>600 foto</b>. Puoi aumentare se vedi che arrivano molte foto.</p>
+
+        {data && <div className="adminStatus">
+          <div><b>Obiettivo impostato:</b> {data.totalTiles} foto/tessere</div>
+          <div><b>Foto invitati caricate:</b> {data.receivedCount}</div>
+          <div><b>Mancano:</b> {data.missing}</div>
+          <div><b>Foto finale mosaico:</b> {data.hasTarget ? `SÌ — ${data.target?.name} — ${kb(data.target?.size)}` : 'NO'}</div>
+          <div><b>Sfondo home/caricamento:</b> {data.hasUploadBackground ? `SÌ — ${data.uploadBackground?.name} — ${kb(data.uploadBackground?.size)}` : 'NO'}</div>
+        </div>}
+
         {data && <>
           <div className="bigcount">{data.receivedCount} / {data.totalTiles}</div>
           <div className="progressbar"><div style={{width:`${pct}%`}} /></div>
-          <p>{data.complete ? 'Mosaico completo' : `Mancano ${data.missing} foto.`}</p>
-          <p><b>Foto finale caricata:</b> {data.hasTarget ? 'SÌ' : 'NO'}</p>
-          <p><b>Sfondo caricamento:</b> {data.hasUploadBackground ? 'SÌ' : 'NO'}</p>
         </>}
+
+        <p>Il reset cancella solo le foto degli invitati. Foto finale e sfondo restano, oppure puoi cancellarli con i pulsanti dedicati.</p>
 
         <h2>1. Scegli numero foto</h2>
         <div className="gridBtns">{options.map(n=><button className="btn" disabled={busy} key={n} onClick={()=>setTotal(n)}>{n} foto</button>)}</div>
 
         <div className="spacer" />
-        <h2>2. Carica foto finale</h2>
-        <p>Questa è la foto da riprodurre nel mosaico. Apparirà solo alla fine.</p>
+        <h2>2. Foto finale da riprodurre</h2>
+        <p>Viene salvata come <b>__TARGET_MOSAICO.jpg</b> in dimensione originale.</p>
         <input className="field" type="file" accept="image/*" onChange={onTargetChange}/>
         {targetPreview && <img className="preview" src={targetPreview} alt="Foto finale" style={{display:'block'}}/>}
         {targetInfo && <div className="ok">{targetInfo}</div>}
         <div className="spacer" />
         <button className="btn" disabled={busy || !targetBase64} onClick={uploadTarget}>Carica foto finale</button>
+        <div className="spacer" />
+        <button className="btn danger" disabled={busy || !data?.hasTarget} onClick={clearTarget}>Cancella foto finale</button>
 
         <div className="spacer" />
-        <h2>3. Sfondo pagina caricamento</h2>
-        <p>Questa immagine sarà lo sfondo della pagina che vedono gli invitati quando caricano le foto.</p>
+        <h2>3. Sfondo home/caricamento</h2>
+        <p>Viene salvato come <b>__UPLOAD_BACKGROUND.jpg</b> in dimensione originale.</p>
         <input className="field" type="file" accept="image/*" onChange={onBgChange}/>
         {bgPreview && <img className="preview" src={bgPreview} alt="Sfondo caricamento" style={{display:'block'}}/>}
         {bgInfo && <div className="ok">{bgInfo}</div>}
         <div className="spacer" />
-        <button className="btn" disabled={busy || !bgBase64} onClick={uploadBackground}>Aggiorna sfondo caricamento</button>
+        <button className="btn" disabled={busy || !bgBase64} onClick={uploadBackground}>Aggiorna sfondo home/caricamento</button>
+        <div className="spacer" />
+        <button className="btn danger" disabled={busy || !data?.hasUploadBackground} onClick={clearBackground}>Cancella sfondo</button>
 
         <div className="spacer" />
         <h2>4. Schermo</h2>
@@ -173,7 +202,7 @@ export default function AdminPage(){
         <button className="btn secondary" onClick={load}>Aggiorna stato</button>
 
         <div className="spacer" />
-        <button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Cancella foto invitati da Drive</button>
+        <button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Reset mosaico: cancella solo foto invitati</button>
 
         {busy && <><div className="spacer" /><div className="ok">Operazione in corso...</div></>}
         {msg && <><div className="spacer" /><div className="ok">{msg}</div></>}

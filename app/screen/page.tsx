@@ -57,11 +57,20 @@ export default function ScreenPage(){
   const [tiles,setTiles]=useState<Tile[]>([]);
   const [final,setFinal]=useState(false);
   const [completeMsg,setCompleteMsg]=useState(false);
+  const [isFullscreen,setIsFullscreen]=useState(false);
+  const [replayStarted,setReplayStarted]=useState(false);
+
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());
   const usedIndexes=useRef<Set<number>>(new Set());
   const targetColorRef=useRef<number[][]>([]);
   const totalRef=useRef(600);
+
+  function targetImageUrl(s:any){
+    if(!s?.targetFileId) return '';
+    const version = s?.target?.updated || Date.now();
+    return `/api/image?id=${s.targetFileId}&v=${version}`;
+  }
 
   async function fetchStatus(){
     try{
@@ -74,16 +83,17 @@ export default function ScreenPage(){
       const {cols,rows}=gridForTotal(s.totalTiles || 600);
 
       if(s.targetFileId && targetColorRef.current.length !== (cols*rows)){
-        targetColorRef.current=await targetColors(`/api/image?id=${s.targetFileId}`, cols, rows);
+        targetColorRef.current=await targetColors(targetImageUrl(s), cols, rows);
       }
 
-      if(!processing.current && targetColorRef.current.length){
+      if(!processing.current && targetColorRef.current.length && !replayStarted){
         processing.current=true;
         await addNewPhotos(s.photos || [], s.totalTiles || 600);
         processing.current=false;
       }
 
-      if(s.complete && !final){
+      if(s.complete && !final && !replayStarted){
+        setReplayStarted(true);
         setCompleteMsg(true);
         setTimeout(()=>setCompleteMsg(false),2500);
         setTimeout(()=>startReplay(s.totalTiles || 600),3000);
@@ -114,43 +124,47 @@ export default function ScreenPage(){
 
   async function startReplay(total:number){
     setFinal(false);
-    setTiles(prev=>{
-      const ordered=[...prev].sort((a,b)=>a.order-b.order);
-      assignedIds.current=new Set(ordered.map(t=>t.id));
-      usedIndexes.current=new Set(ordered.map(t=>t.index));
-      return [];
-    });
-
-    const r=await fetch('/api/status?x='+Date.now());
-    const s=await r.json();
-    const currentPhotos:Photo[]=(s.photos || []).slice(0,total);
-    const oldTiles = Array.from(usedIndexes.current);
+    setCompleteMsg(false);
+    setReplayStarted(true);
     assignedIds.current=new Set();
     usedIndexes.current=new Set();
     setTiles([]);
 
+    const r=await fetch('/api/status?x='+Date.now());
+    const s=await r.json();
+    const currentPhotos:Photo[]=(s.photos || []).slice(0,total);
+    setStatus(s);
+
     await addNewPhotos(currentPhotos,total);
-    setTimeout(()=>setFinal(true), Math.max(1500, currentPhotos.length*85 + 1000));
+    setTimeout(()=>setFinal(true), 1200);
   }
 
   useEffect(()=>{
     fetchStatus();
     const id=setInterval(fetchStatus,3500);
-    return ()=>clearInterval(id);
-  },[]);
+    const fs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange',fs);
+    return ()=>{
+      clearInterval(id);
+      document.removeEventListener('fullscreenchange',fs);
+    };
+  },[replayStarted,final]);
 
   const total=status?.totalTiles || 600;
   const {cols,rows}=gridForTotal(total);
   const cells=Array.from({length:total});
   const tileMap=new Map<number,Tile>();
   tiles.forEach(t=>tileMap.set(t.index,t));
-  const targetUrl=status?.targetFileId ? `/api/image?id=${status.targetFileId}` : '';
+  const targetUrl=targetImageUrl(status);
   const count=tiles.length;
   const pct=Math.min(100,Math.round((count/total)*100));
 
+  // In modalità finale + schermo intero spariscono tutti i testi tecnici e i pulsanti.
+  const cleanFinalFullscreen = isFullscreen && (replayStarted || final);
+
   return (
     <div style={{height:'100vh',background:'#111',color:'#fff',fontFamily:'Arial, sans-serif',overflow:'hidden',position:'relative'}}>
-      <div style={{position:'absolute',top:22,left:28,right:28,display:'flex',justifyContent:'space-between',zIndex:5}}>
+      {!cleanFinalFullscreen && <div style={{position:'absolute',top:22,left:28,right:28,display:'flex',justifyContent:'space-between',zIndex:5}}>
         <div>
           <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
             {count} / {total} tessere
@@ -162,22 +176,23 @@ export default function ScreenPage(){
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
           {count>=total ? 'Completo' : `Mancano ${Math.max(0,total-count)}`}
         </div>
-      </div>
+      </div>}
 
-      <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:24,boxSizing:'border-box'}}>
+      <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:cleanFinalFullscreen ? 0 : 24,boxSizing:'border-box'}}>
         <div style={{
           position:'relative',
-          width:`min(94vw, ${cols*28}px)`,
-          aspectRatio:`${cols}/${rows}`,
+          width:cleanFinalFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
+          height:cleanFinalFullscreen ? '100vh' : undefined,
+          aspectRatio:cleanFinalFullscreen ? undefined : `${cols}/${rows}`,
           background:'#202020',
-          borderRadius:10,
+          borderRadius:cleanFinalFullscreen ? 0 : 10,
           overflow:'hidden',
-          boxShadow:'0 12px 50px #0009'
+          boxShadow:cleanFinalFullscreen ? 'none' : '0 12px 50px #0009'
         }}>
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
+              return <div key={i} style={{background:'#222',border:cleanFinalFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
                 {t && <img src={t.url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',animation:'pop .45s ease'}}/>}
               </div>
             })}
@@ -186,21 +201,32 @@ export default function ScreenPage(){
             position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
             opacity:final?1:0,transition:'opacity 3s ease',zIndex:3
           }}/>}
-          {completeMsg && <div style={{
+          {completeMsg && !cleanFinalFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
           }}>MOSAICO COMPLETO</div>}
         </div>
       </div>
 
-      {final && <div style={{position:'absolute',bottom:18,left:0,right:0,textAlign:'center',fontSize:28,fontWeight:800,textShadow:'0 3px 12px #000',zIndex:6}}>
+      {final && <div style={{
+        position:'absolute',
+        bottom: cleanFinalFullscreen ? 42 : 18,
+        left:0,
+        right:0,
+        textAlign:'center',
+        fontSize: cleanFinalFullscreen ? 'clamp(28px,4vw,56px)' : 28,
+        fontWeight:800,
+        textShadow:'0 3px 18px #000',
+        zIndex:6,
+        padding:'0 20px'
+      }}>
         Grazie per aver costruito con noi questo ricordo.
       </div>}
 
-      <div style={{position:'absolute',bottom:22,right:28,display:'flex',gap:10,zIndex:10}}>
+      {!cleanFinalFullscreen && <div style={{position:'absolute',bottom:22,right:28,display:'flex',gap:10,zIndex:10}}>
         <button onClick={()=>startReplay(total)} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Replay finale</button>
         <button onClick={()=>document.documentElement.requestFullscreen()} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Schermo intero</button>
-      </div>
+      </div>}
 
       <style>{`@keyframes pop{0%{opacity:0;transform:scale(.75)}100%{opacity:1;transform:scale(1)}}`}</style>
     </div>
