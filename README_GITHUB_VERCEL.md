@@ -210,3 +210,13 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - I segni delle giunzioni sfumano grazie a un overlay finale pulito.
 - Il pulsante `Oggi sposi` è più alto dentro e un po’ più in basso.
 - Il box è quasi trasparente e l’immagine sotto fa un leggero effetto gonfia/sgonfia.
+
+
+## Splash corretto
+
+- Prima compare la luce bianca.
+- Poi compaiono solo i ritagli uno a uno, senza immagine intera sotto.
+- Dopo l’ultimo ritaglio arriva il flash bianco a tutto schermo.
+- Solo dopo il flash appare in fade-in l’immagine completa.
+- I segni delle giunzioni sfumano via sotto l’immagine finale.
+- Il pulsante Oggi sposi compare di nuovo ed è più alto per contenere bene la scritta.

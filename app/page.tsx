@@ -82,7 +82,7 @@ export default function UploadPage() {
     }
     loadBg();
 
-    const readyTimer = setTimeout(()=>setSplashReady(true), 4300);
+    const readyTimer = setTimeout(()=>setSplashReady(true), 6200);
 
     return () => {
       clearTimeout(readyTimer);
