@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -30,22 +31,23 @@ async function compressImage(file: File): Promise<{base64:string;previewUrl:stri
 
 export default function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [files,setFiles]=useState<File[]>([]);
+  const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
   const [status,setStatus]=useState('');
   const [result,setResult]=useState<any>(null);
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
-  const [done,setDone]=useState(0);
-  const [total,setTotal]=useState(0);
   const [bgUrl,setBgUrl]=useState('');
+  const [opacity,setOpacity]=useState(0.22);
   const [notice,setNotice]=useState('');
+  const [menu,setMenu]=useState(false);
 
   useEffect(() => {
     async function loadBg(){
       try{
         const r = await fetch('/api/status?x=' + Date.now());
         const d = await r.json();
+        if(d?.panelOpacity !== undefined) setOpacity(Number(d.panelOpacity));
         if(d?.uploadBackgroundFileId){
           const version = d?.uploadBackground?.updated || Date.now();
           setBgUrl(`/api/image?id=${d.uploadBackgroundFileId}&v=${version}`);
@@ -56,74 +58,54 @@ export default function UploadPage() {
   }, []);
 
   async function onFileChange(e:React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    setFiles(selected);
+    const selected = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'))[0] || null;
+    setFile(selected);
     setError('');
     setResult(null);
-    setDone(0);
-    setTotal(selected.length);
     setNotice('');
-    setStatus(selected.length === 1 ? '1 foto selezionata.' : `${selected.length} foto selezionate.`);
+    setStatus('');
     setPreview('');
 
-    if (selected[0]) {
+    if (selected) {
       try {
-        const r = await compressImage(selected[0]);
+        const r = await compressImage(selected);
         setPreview(r.previewUrl);
-      } catch {}
+        setStatus('Foto pronta.');
+      } catch { setError('Errore preparazione foto.'); }
     }
   }
 
-  async function uploadOne(file: File, index: number) {
-    const r = await compressImage(file);
-    if (index === 0) setPreview(r.previewUrl);
-
-    const resp = await fetch('/api/upload', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        filename:`foto_mosaico_${Date.now()}_${index+1}.jpg`,
-        imageBase64:r.base64
-      })
-    });
-
-    const data = await resp.json();
-    if(!resp.ok || !data.ok) throw new Error(data.error || `Errore caricamento foto ${index+1}`);
-    return data;
-  }
-
-  async function sendPhotos() {
+  async function sendPhoto() {
     setError('');
     setNotice('');
-    if(!files.length) { setError('Prima carica una o più foto.'); return; }
+    if(!file) { setError('Prima carica una foto.'); return; }
 
     try {
       setBusy(true);
-      setDone(0);
-      setTotal(files.length);
       setStatus('Caricamento in corso...');
+      const r = await compressImage(file);
+      const resp = await fetch('/api/upload', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          filename:`foto_mosaico_${Date.now()}_1.jpg`,
+          imageBase64:r.base64
+        })
+      });
+      const data = await resp.json();
+      if(!resp.ok || !data.ok) throw new Error(data.error || 'Errore caricamento foto');
+      setResult(data);
 
-      let last:any = null;
-      for (let i=0; i<files.length; i++) {
-        setStatus(`Riduco e invio foto ${i+1} di ${files.length}...`);
-        last = await uploadOne(files[i], i);
-        setDone(i+1);
-        setResult(last);
-        await new Promise(res => setTimeout(res, 180));
-      }
+      const missing = Math.max(0, Number(data?.missing || 0));
+      const totalTiles = Number(data?.totalTiles || 0);
+      const received = Number(data?.receivedCount || 0);
 
-      const missing = Math.max(0, Number(last?.missing || 0));
-      const totalTiles = Number(last?.totalTiles || 0);
-      const received = Number(last?.receivedCount || 0);
+      if (data?.complete) setNotice(`Grazie! Fotomosaico completo: ${received}/${totalTiles}.`);
+      else setNotice(`Grazie! Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
 
-      if (last?.complete) {
-        setNotice(`Grazie! Fotomosaico completo: ${received}/${totalTiles}.`);
-      } else {
-        setNotice(`Grazie! Foto caricate. Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
-      }
-
-      setStatus(files.length === 1 ? 'Foto caricata. Grazie!' : `${files.length} foto caricate. Grazie!`);
-      setFiles([]);
+      setStatus('Foto caricata. Grazie!');
+      setFile(null);
+      setPreview('');
       if(fileInputRef.current) fileInputRef.current.value = '';
     } catch(err:any) {
       setError(err?.message || 'Errore invio.');
@@ -132,11 +114,16 @@ export default function UploadPage() {
     }
   }
 
-  const pctUpload = total ? Math.round((done/total)*100) : 0;
   const pctMosaic = result ? Math.min(100,Math.round((result.receivedCount/result.totalTiles)*100)) : 0;
 
   return (
     <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
+      <button className="hamburger" onClick={()=>setMenu(!menu)}>{menu ? '×' : '☰'}</button>
+      {menu && <div className="hamburgerPanel">
+        <Link className="btn secondary" href="/admin">Area Admin</Link>
+        <Link className="btn secondary" href="/">Home</Link>
+      </div>}
+
       {busy && <div className="spinnerOverlay">
         <div className="spinner" />
         <div style={{fontSize:24,fontWeight:800}}>Caricamento...</div>
@@ -151,30 +138,14 @@ export default function UploadPage() {
         </div>
       </div>}
 
-      <section className="uploadPanel">
+      <section className="uploadPanel" style={{background:`rgba(255,255,255,${opacity})`}}>
         <h1 className="uploadTitle">Partecipa al mosaico</h1>
 
-        <input
-          ref={fileInputRef}
-          className="hiddenFileInput"
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={onFileChange}
-        />
-
-        <button className="btn" onClick={()=>fileInputRef.current?.click()} disabled={busy}>
-          Carica foto
-        </button>
+        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="image/*" onChange={onFileChange}/>
+        <button className="btn" onClick={()=>fileInputRef.current?.click()} disabled={busy}>Carica foto</button>
 
         {preview && <img className="preview" src={preview} alt="Anteprima" style={{display:'block'}}/>}
-
         {status && !busy && <div className="ok">{status}</div>}
-
-        {total > 0 && <>
-          <div className="bigcount">{done} / {total} caricate</div>
-          <div className="progressbar"><div style={{width:`${pctUpload}%`}} /></div>
-        </>}
 
         {result && <>
           <div className="bigcount">Mosaico: {result.receivedCount} / {result.totalTiles}</div>
@@ -185,9 +156,7 @@ export default function UploadPage() {
         {error && <div className="error" style={{display:'block'}}>{error}</div>}
 
         <div className="spacer" />
-        <button className="btn secondary" disabled={busy || !files.length} onClick={sendPhotos}>
-          {busy ? 'Caricamento...' : files.length > 1 ? `Invia ${files.length} foto` : 'Invia foto'}
-        </button>
+        <button className="btn secondary" disabled={busy || !file} onClick={sendPhoto}>Invia foto</button>
       </section>
     </main>
   );

@@ -71,3 +71,17 @@ Su `/screen`, quando parte il replay finale e la pagina è a schermo intero, ven
 - Dopo l'invio, l'invitato vede subito quante foto sono state caricate e quante ne mancano.
 - Il box della pagina caricamento è semi trasparente e lascia vedere lo sfondo.
 - Non serve modificare Google Apps Script rispetto alla versione precedente `ADMIN_COMPLETO_ORIGINALI`.
+
+
+## Aggiornamento Admin/password/upload test
+
+Questa versione richiede aggiornamento di `GOOGLE_APPS_SCRIPT/Code.gs`.
+
+Novità:
+- `/upload` invitati permette una sola foto per volta.
+- `/test-upload` è riservata Admin e permette upload multiplo per prove grandi.
+- `/admin` richiede password, default `admin123`.
+- Da `/admin` puoi cambiare password.
+- Da `/admin` puoi regolare trasparenza del box home/upload.
+- Da `/admin` vedi anteprima dello sfondo e della foto finale già caricati.
+- Menu hamburger con link Admin, upload, test e schermo.
