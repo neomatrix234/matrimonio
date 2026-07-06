@@ -59,6 +59,7 @@ export default function ScreenPage(){
   const [completeMsg,setCompleteMsg]=useState(false);
   const [isFullscreen,setIsFullscreen]=useState(false);
   const [replayStarted,setReplayStarted]=useState(false);
+  const [paused,setPaused]=useState(false);
 
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());
@@ -86,7 +87,7 @@ export default function ScreenPage(){
         targetColorRef.current=await targetColors(targetImageUrl(s), cols, rows);
       }
 
-      if(!processing.current && targetColorRef.current.length && !replayStarted){
+      if(!paused && !processing.current && targetColorRef.current.length && !replayStarted){
         processing.current=true;
         await addNewPhotos(s.photos || [], s.totalTiles || 600);
         processing.current=false;
@@ -120,6 +121,25 @@ export default function ScreenPage(){
       setTiles(prev=>[...prev,{id:p.id,index:best,order:prev.length+1,url}]);
       await new Promise(res=>setTimeout(res,80));
     }
+  }
+
+  function stopMosaic(){
+    setPaused(true);
+    setReplayStarted(false);
+    setFinal(false);
+    setCompleteMsg(false);
+  }
+
+  function restartMosaic(){
+    setPaused(false);
+    setReplayStarted(false);
+    setFinal(false);
+    setCompleteMsg(false);
+    assignedIds.current=new Set();
+    usedIndexes.current=new Set();
+    setTiles([]);
+    targetColorRef.current=[];
+    setTimeout(()=>fetchStatus(),250);
   }
 
   async function startReplay(total:number){
@@ -164,6 +184,11 @@ export default function ScreenPage(){
 
   return (
     <div style={{height:'100vh',background:'#111',color:'#fff',fontFamily:'Arial, sans-serif',overflow:'hidden',position:'relative'}}>
+      <div className="screenControlBar">
+        {isFullscreen && <button onClick={()=>document.exitFullscreen()}>Esci schermo intero</button>}
+        <button className="danger" onClick={stopMosaic}>Interrompi</button>
+        <button onClick={restartMosaic}>Riparti</button>
+      </div>
       {!cleanFinalFullscreen && <div style={{position:'absolute',top:22,left:28,right:28,display:'flex',justifyContent:'space-between',zIndex:5}}>
         <div>
           <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
@@ -223,7 +248,7 @@ export default function ScreenPage(){
         Grazie per aver costruito con noi questo ricordo.
       </div>}
 
-      {!cleanFinalFullscreen && <div style={{position:'absolute',bottom:22,right:28,display:'flex',gap:10,zIndex:10}}>
+      {!isFullscreen && <div style={{position:'absolute',bottom:22,right:28,display:'flex',gap:10,zIndex:10}}>
         <button onClick={()=>startReplay(total)} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Replay finale</button>
         <button onClick={()=>document.documentElement.requestFullscreen()} style={{fontSize:16,border:0,borderRadius:12,padding:'12px 16px',background:'#fff',color:'#111',fontWeight:800,cursor:'pointer'}}>Schermo intero</button>
       </div>}

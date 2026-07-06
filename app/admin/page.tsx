@@ -78,7 +78,22 @@ export default function AdminPage(){
   }
 
   async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); try{await adminAction('setTotal',{totalTiles:n});setMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
-  async function setOpacity(v:number){ setBusyText('Aggiorno trasparenza...'); try{await adminAction('setPanelOpacity',{panelOpacity:v});setMsg(`Trasparenza impostata.`);}catch{} }
+  async function setOpacity(v:number){
+    setData((prev:any)=>prev ? {...prev, panelOpacity:v} : prev);
+    try{
+      const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setPanelOpacity',adminPassword:password,panelOpacity:v})});
+      const d=await r.json();
+      if(d?.ok) setData(d.status||d);
+    }catch{}
+  }
+  async function setBackgroundDarkness(v:number){
+    setData((prev:any)=>prev ? {...prev, backgroundDarkness:v} : prev);
+    try{
+      const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setBackgroundDarkness',adminPassword:password,backgroundDarkness:v})});
+      const d=await r.json();
+      if(d?.ok) setData(d.status||d);
+    }catch{}
+  }
 
   async function changePassword(){
     if(newPassword.length<6){setErr('La nuova password deve avere almeno 6 caratteri.'); return;}
@@ -115,8 +130,6 @@ export default function AdminPage(){
       {busy && <div className="adminSpinnerOverlay"><div className="adminSpinner"/><div style={{fontSize:24,fontWeight:800}}>{busyText}</div></div>}
       <section className="card">
         <h1>Accesso Admin</h1>
-        <p>Password iniziale:</p>
-        <pre>admin123</pre>
         <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin"/>
         <div className="spacer"/><button className="btn" onClick={login}>Accedi</button>
         {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
@@ -127,7 +140,8 @@ export default function AdminPage(){
   const pct=data?Math.min(100,Math.round((data.receivedCount/data.totalTiles)*100)):0;
   const bgUrl=data?.uploadBackgroundFileId?`/api/image?id=${data.uploadBackgroundFileId}&v=${data?.uploadBackground?.updated || Date.now()}`:'';
   const targetUrl=data?.targetFileId?`/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`:'';
-  const opacity=Number(data?.panelOpacity ?? 0.22);
+  const opacity=Number(data?.panelOpacity ?? 0.10);
+  const bgDark=Number(data?.backgroundDarkness ?? 0.18);
 
   return (
     <main className="container">
@@ -150,6 +164,7 @@ export default function AdminPage(){
           <div><b>Foto invitati:</b> {data.receivedCount}</div>
           <div><b>Mancano:</b> {data.missing}</div>
           <div><b>Trasparenza box:</b> {Math.round((1-opacity)*100)}% trasparente</div>
+          <div><b>Oscuramento sfondo:</b> {Math.round(bgDark*100)}%</div>
           <div><b>Foto finale:</b> {data.hasTarget?`SÌ — ${data.target?.name} — ${kb(data.target?.size)}`:'NO'}</div>
           <div><b>Sfondo:</b> {data.hasUploadBackground?`SÌ — ${data.uploadBackground?.name} — ${kb(data.uploadBackground?.size)}`:'NO'}</div>
         </div>}
@@ -164,11 +179,15 @@ export default function AdminPage(){
         <h2>1. Numero foto</h2>
         <div className="gridBtns">{options.map(n=><button className="btn" disabled={busy} key={n} onClick={()=>setTotal(n)}>{n} foto</button>)}</div>
 
-        <div className="spacer"/><h2>2. Trasparenza box home/upload</h2>
-        <p>0 = quasi invisibile, 95 = quasi bianco.</p>
-        <input className="field" type="range" min="0.05" max="0.95" step="0.05" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/>
-        <div className="transparencyPreview" style={{backgroundImage:bgUrl?`url(${bgUrl})`:'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
-          <div className="transparencyBox" style={{background:`rgba(255,255,255,${opacity})`}}>Esempio box</div>
+        <div className="spacer"/><h2>2. Trasparenza box e sfondo</h2>
+        <p>Le modifiche sono applicate subito, senza finestra di conferma.</p>
+        <label><b>Trasparenza box</b></label>
+        <input className="field" type="range" min="0.02" max="0.95" step="0.01" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/>
+        <label><b>Oscuramento immagine sfondo</b></label>
+        <input className="field" type="range" min="0" max="0.85" step="0.01" value={bgDark} onChange={e=>setBackgroundDarkness(Number(e.target.value))}/>
+        <div className="transparencyPreview" style={{backgroundImage:bgUrl?`url(${bgUrl})`:'linear-gradient(135deg,#6d5b4b,#201a16)', position:'relative'}}>
+          <div className="bgDim" style={{opacity:bgDark}} />
+          <div className="transparencyBox" style={{background:`rgba(255,255,255,${opacity})`, position:'relative', zIndex:2}}>Esempio box</div>
         </div>
 
         <div className="spacer"/><h2>3. Foto finale da riprodurre</h2>

@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
       payload.totalTiles = Number(body.totalTiles);
     } else if (action === 'setPanelOpacity') {
       payload.panelOpacity = Number(body.panelOpacity);
+    } else if (action === 'setBackgroundDarkness') {
+      payload.backgroundDarkness = Number(body.backgroundDarkness);
     } else if (action === 'uploadTarget' || action === 'uploadBackground') {
       payload.imageBase64 = String(body.imageBase64 || '');
       if (!payload.imageBase64) return NextResponse.json({ ok:false, error:'Immagine mancante' }, { status:400 });

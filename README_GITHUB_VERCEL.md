@@ -85,3 +85,17 @@ Novità:
 - Da `/admin` puoi regolare trasparenza del box home/upload.
 - Da `/admin` vedi anteprima dello sfondo e della foto finale già caricati.
 - Menu hamburger con link Admin, upload, test e schermo.
+
+
+## Aggiornamento finale UI
+
+Questa versione richiede aggiornamento di `GOOGLE_APPS_SCRIPT/Code.gs`.
+
+Novità:
+- La home `/` mostra subito il box per caricare la foto, senza pagina intermedia.
+- `/upload` e `/` sono equivalenti per l’invitato.
+- Upload invitato: una sola foto per volta.
+- Il box è quasi trasparente di default.
+- Da Admin regoli in tempo reale trasparenza box e oscuramento dello sfondo, senza popup di conferma.
+- La password default non viene più mostrata nella pagina login Admin.
+- Su `/screen`, anche in schermo intero, ci sono pulsanti per uscire da schermo intero, interrompere e ripartire.

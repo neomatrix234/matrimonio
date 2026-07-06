@@ -293,3 +293,46 @@ p{font-size:18px;line-height:1.45;color:var(--muted)}.btn{display:inline-flex;wi
 @media(max-width:720px){
   .specialPreview{grid-template-columns:1fr}
 }
+/* Final UI tweaks */
+.homeFull::before,.uploadFull::before{display:none !important;}
+.bgDim{
+  position:absolute;
+  inset:0;
+  background:#000;
+  pointer-events:none;
+  z-index:0;
+}
+.homePanel,.uploadPanel{
+  border:1px solid rgba(255,255,255,.28);
+}
+.uploadPanel{
+  box-shadow:0 16px 60px rgba(0,0,0,.18);
+}
+.screenControlBar{
+  position:fixed;
+  right:18px;
+  top:18px;
+  z-index:50;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.screenControlBar button{
+  border:0;
+  border-radius:12px;
+  padding:11px 14px;
+  background:rgba(255,255,255,.88);
+  color:#111;
+  font-weight:800;
+  cursor:pointer;
+  font-size:15px;
+}
+.screenControlBar button.danger{
+  background:rgba(170,34,34,.9);
+  color:#fff;
+}
+@media(max-width:720px){
+  .screenControlBar{left:12px;right:12px;top:12px}
+  .screenControlBar button{font-size:13px;padding:10px 12px}
+}
