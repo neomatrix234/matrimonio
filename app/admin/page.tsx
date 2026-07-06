@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 const options = [600, 800, 1000, 1200, 1500];
@@ -28,6 +28,7 @@ export default function AdminPage(){
   const [err,setErr]=useState('');
   const [busy,setBusy]=useState(false);
   const [busyText,setBusyText]=useState('Operazione in corso...');
+  const msgTimer = useRef<any>(null);
 
   const [targetBase64,setTargetBase64]=useState('');
   const [targetPreview,setTargetPreview]=useState('');
@@ -48,6 +49,12 @@ export default function AdminPage(){
     };
   },[]);
 
+  function showAdminMsg(text:string){
+    setMsg(text);
+    if(msgTimer.current) clearTimeout(msgTimer.current);
+    msgTimer.current = setTimeout(()=>setMsg(''), 1500);
+  }
+
   async function login(){
     setErr(''); setBusyText('Accesso admin...'); setBusy(true);
     try{
@@ -57,7 +64,7 @@ export default function AdminPage(){
       sessionStorage.setItem('fm_admin_password',password);
       setLogged(true);
       setData(d.status || d);
-      setMsg('Accesso effettuato.');
+      showAdminMsg('Accesso effettuato.');
     }catch(e:any){setErr(e?.message||'Errore accesso');}
     finally{setBusy(false);}
   }
@@ -86,7 +93,7 @@ export default function AdminPage(){
     finally{setBusy(false);}
   }
 
-  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); try{await adminAction('setTotal',{totalTiles:n});setMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
+  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); try{await adminAction('setTotal',{totalTiles:n});showAdminMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
   async function setOpacity(v:number){
     setData((prev:any)=>prev ? {...prev, panelOpacity:v} : prev);
     try{
@@ -112,7 +119,7 @@ export default function AdminPage(){
       sessionStorage.setItem('fm_admin_password',newPassword);
       setPassword(newPassword);
       setNewPassword('');
-      setMsg('Password Admin aggiornata.');
+      showAdminMsg('Password Admin aggiornata.');
     }catch{}
   }
 
@@ -128,18 +135,18 @@ export default function AdminPage(){
     try{setBusyText('Leggo sfondo...'); setBusy(true); const r=await readOriginalFile(file); setBgBase64(r.base64); setBgPreview(r.previewUrl); setBgInfo(`Sfondo pronto in originale, circa ${r.sizeKb} KB.`);}
     catch(e:any){setErr(e?.message||'Errore lettura sfondo');} finally{setBusy(false);}
   }
-  async function uploadTarget(){ if(!targetBase64){setErr('Scegli prima la foto finale.');return;} setBusyText('Carico foto finale...'); try{await adminAction('uploadTarget',{imageBase64:targetBase64});setMsg('Foto finale caricata.');setTargetBase64('');}catch{} }
-  async function uploadBackground(){ if(!bgBase64){setErr('Scegli prima lo sfondo.');return;} setBusyText('Carico sfondo...'); try{await adminAction('uploadBackground',{imageBase64:bgBase64});setMsg('Sfondo aggiornato.');setBgBase64('');}catch{} }
-  async function clearGuestPhotos(){ if(!confirm('Cancellare solo le foto invitati?'))return; setBusyText('Reset mosaico...'); try{const d=await adminAction('clearGuestPhotos');setMsg(`Foto invitati cancellate: ${d.trashed||0}.`);}catch{} }
-  async function clearTarget(){ if(!confirm('Cancellare la foto finale?'))return; setBusyText('Cancello foto finale...'); try{await adminAction('clearTarget');setMsg('Foto finale cancellata.');}catch{} }
-  async function clearBackground(){ if(!confirm('Cancellare lo sfondo?'))return; setBusyText('Cancello sfondo...'); try{await adminAction('clearBackground');setMsg('Sfondo cancellato.');}catch{} }
+  async function uploadTarget(){ if(!targetBase64){setErr('Scegli prima la foto finale.');return;} setBusyText('Carico foto finale...'); try{await adminAction('uploadTarget',{imageBase64:targetBase64});showAdminMsg('Foto finale caricata.');setTargetBase64('');}catch{} }
+  async function uploadBackground(){ if(!bgBase64){setErr('Scegli prima lo sfondo.');return;} setBusyText('Carico sfondo...'); try{await adminAction('uploadBackground',{imageBase64:bgBase64});showAdminMsg('Sfondo aggiornato.');setBgBase64('');}catch{} }
+  async function clearGuestPhotos(){ if(!confirm('Cancellare solo le foto invitati?'))return; setBusyText('Reset mosaico...'); try{const d=await adminAction('clearGuestPhotos');showAdminMsg(`Foto invitati cancellate: ${d.trashed||0}.`);}catch{} }
+  async function clearTarget(){ if(!confirm('Cancellare la foto finale?'))return; setBusyText('Cancello foto finale...'); try{await adminAction('clearTarget');showAdminMsg('Foto finale cancellata.');}catch{} }
+  async function clearBackground(){ if(!confirm('Cancellare lo sfondo?'))return; setBusyText('Cancello sfondo...'); try{await adminAction('clearBackground');showAdminMsg('Sfondo cancellato.');}catch{} }
 
   if(!logged){
     return <main className="container">
       {busy && <div className="adminSpinnerOverlay"><div className="adminSpinner"/><div style={{fontSize:24,fontWeight:800}}>{busyText}</div></div>}
       <section className="card">
         <h1>Accesso Admin</h1>
-        <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin"/>
+        <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin" onKeyDown={(e)=>{if(e.key==='Enter') login();}}/>
         <div className="spacer"/><button className="btn" onClick={login}>Accedi</button>
         {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
       </section>
@@ -223,7 +230,7 @@ export default function AdminPage(){
         <div className="spacer"/><button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Reset mosaico: cancella solo foto invitati</button>
 
         <div className="spacer"/><h2>6. Cambia password Admin</h2>
-        <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin"/>
+        <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin" onKeyDown={(e)=>{if(e.key==='Enter' && newPassword.length>=6) changePassword();}}/>
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
 
         {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}

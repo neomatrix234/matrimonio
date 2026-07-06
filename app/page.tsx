@@ -27,8 +27,9 @@ async function compressImage(file: File): Promise<{base64:string;previewUrl:stri
   return { base64, previewUrl: dataUrl, sizeKb: Math.round((base64.length * 0.75) / 1024) };
 }
 
-export default function HomeUploadPage() {
+export default function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const noticeTimer = useRef<any>(null);
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
   const [status,setStatus]=useState('');
@@ -39,6 +40,24 @@ export default function HomeUploadPage() {
   const [opacity,setOpacity]=useState(0.10);
   const [bgDark,setBgDark]=useState(0.18);
   const [notice,setNotice]=useState('');
+
+  function resetToInitial(){
+    setFile(null);
+    setPreview('');
+    setStatus('');
+    setResult(null);
+    setError('');
+    setNotice('');
+    if(fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function showThanks(message:string){
+    setNotice(message);
+    if(noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => {
+      resetToInitial();
+    }, 5000);
+  }
 
   useEffect(() => {
     async function loadBg(){
@@ -54,6 +73,7 @@ export default function HomeUploadPage() {
       }catch{}
     }
     loadBg();
+    return () => { if(noticeTimer.current) clearTimeout(noticeTimer.current); };
   }, []);
 
   async function onFileChange(e:React.ChangeEvent<HTMLInputElement>) {
@@ -82,7 +102,7 @@ export default function HomeUploadPage() {
       const missing = Math.max(0, Number(data?.missing || 0));
       const totalTiles = Number(data?.totalTiles || 0);
       const received = Number(data?.receivedCount || 0);
-      setNotice(data?.complete ? `Grazie! Fotomosaico completo: ${received}/${totalTiles}.` : `Grazie! Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
+      showThanks(data?.complete ? `Grazie! Fotomosaico completo: ${received}/${totalTiles}.` : `Grazie! Siamo a ${received}/${totalTiles}. Mancano ${missing} foto.`);
       setStatus('Foto caricata. Grazie!');
       setFile(null); setPreview('');
       if(fileInputRef.current) fileInputRef.current.value = '';
@@ -95,11 +115,12 @@ export default function HomeUploadPage() {
   return (
     <main className="uploadFull" style={{backgroundImage:bgUrl ? `url(${bgUrl})` : 'linear-gradient(135deg,#6d5b4b,#201a16)'}}>
       <div className="bgDim" style={{opacity:bgDark}} />
+
       {busy && <div className="spinnerOverlay"><div className="spinner" /><div style={{fontSize:24,fontWeight:800}}>Caricamento...</div><div style={{fontSize:16,marginTop:8}}>{status}</div></div>}
 
-      {notice && <div className="centerNotice" onClick={()=>setNotice('')}>
+      {notice && <div className="centerNotice" onClick={resetToInitial}>
         <div className="centerNoticeBox" onClick={(e)=>e.stopPropagation()}>
-          <h2>Grazie!</h2><p>{notice}</p><button className="btn" onClick={()=>setNotice('')}>OK</button>
+          <h2>Grazie!</h2><p>{notice}</p><p style={{fontSize:15}}>Tra pochi secondi puoi caricare un’altra foto.</p><button className="btn" onClick={resetToInitial}>Carica un’altra foto</button>
         </div>
       </div>}
 

@@ -30,6 +30,7 @@ async function compressImage(file: File): Promise<{base64:string;previewUrl:stri
 
 export default function TestUploadPage(){
   const inputRef=useRef<HTMLInputElement|null>(null);
+  const stopRef=useRef(false);
   const [logged,setLogged]=useState(false);
   const [password,setPassword]=useState('');
   const [files,setFiles]=useState<File[]>([]);
@@ -43,11 +44,19 @@ export default function TestUploadPage(){
     const p=sessionStorage.getItem('fm_admin_password');
     if(p){setPassword(p); setLogged(true);}
     const clearAdmin = () => { sessionStorage.removeItem('fm_admin_password'); };
+    const onKey = (e:KeyboardEvent) => {
+      if(e.key === 'Escape'){
+        stopRef.current = true;
+        setStatus('Interruzione richiesta...');
+      }
+    };
     window.addEventListener('pagehide', clearAdmin);
     window.addEventListener('beforeunload', clearAdmin);
+    window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pagehide', clearAdmin);
       window.removeEventListener('beforeunload', clearAdmin);
+      window.removeEventListener('keydown', onKey);
     };
   },[]);
 
@@ -77,17 +86,18 @@ export default function TestUploadPage(){
 
   async function send(){
     if(!files.length){setErr('Scegli prima le foto.');return;}
-    setBusy(true);setErr('');setDone(0);setResult(null);
+    setBusy(true);setErr('');setDone(0);setResult(null);stopRef.current=false;
     try{
       let last:any=null;
       for(let i=0;i<files.length;i++){
+        if(stopRef.current){ setStatus(`Caricamento interrotto: ${i} foto caricate.`); break; }
         setStatus(`Test upload: foto ${i+1} di ${files.length}`);
         last=await uploadOne(files[i],i);
         setDone(i+1);
         setResult(last);
         await new Promise(res=>setTimeout(res,150));
       }
-      setStatus(`Test completato: ${files.length} foto caricate.`);
+      if(!stopRef.current) setStatus(`Test completato: ${files.length} foto caricate.`);
       setFiles([]);
       if(inputRef.current) inputRef.current.value='';
     }catch(e:any){setErr(e?.message||'Errore test upload');}
@@ -98,7 +108,7 @@ export default function TestUploadPage(){
     return <main className="container"><section className="card">
       <h1>Upload test Admin</h1>
       <p>Password default: admin123</p>
-      <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin"/>
+      <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin" onKeyDown={(e)=>{if(e.key==='Enter') login();}}/>
       <div className="spacer"/><button className="btn" onClick={login}>Accedi</button>
       {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
     </section></main>
@@ -113,6 +123,8 @@ export default function TestUploadPage(){
     <div className="bigcount">{done} / {files.length}</div>
     <div className="progressbar"><div style={{width:`${pct}%`}}/></div>
     <button className="btn" disabled={busy||!files.length} onClick={send}>Carica foto test</button>
+    <div className="spacer"/><button className="btn danger" disabled={!busy} onClick={()=>{stopRef.current=true;setStatus('Interruzione richiesta...')}}>Interrompi upload test</button>
+    <p className="small">Puoi interrompere anche premendo ESC.</p>
     {status&&<><div className="spacer"/><div className="ok">{status}</div></>}
     {result&&<p>Mosaico: {result.receivedCount}/{result.totalTiles}. Mancano {result.missing}.</p>}
     {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}

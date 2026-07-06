@@ -118,3 +118,14 @@ Novità:
 - La pagina Admin è più sicura su cellulare: testi, pulsanti e anteprime restano dentro lo schermo senza uscire orizzontalmente.
 - Lo schermo `/screen` non mostra hamburger; in fullscreen resta completamente pulito.
 - Se serve Admin da cellulare, si entra direttamente da `/admin` con password.
+
+
+## Aggiornamento comportamento finale
+
+- Dopo il ringraziamento dell’utente, dopo 5 secondi la pagina torna automaticamente allo stato iniziale per caricare un’altra foto.
+- Nel login Admin, premendo Invio sulla tastiera parte l’accesso come se si cliccasse il pulsante.
+- Nell’upload multiplo test, puoi interrompere con ESC oppure con il pulsante Interrompi.
+- Se carichi più foto dell’obiettivo impostato, le foto vengono salvate comunque; il mosaico usa solo quelle necessarie in base a 600/800/1000/1200/1500.
+- Il mosaico ora applica una tinta colore alle tessere, così l’immagine finale si legge meglio.
+- Durante e dopo la costruzione puoi cliccare una tessera per vedere la foto originale e la versione modificata per il mosaico, senza interrompere il caricamento.
+- Il messaggio “Accesso effettuato” in Admin sparisce da solo dopo circa 1,5 secondi.

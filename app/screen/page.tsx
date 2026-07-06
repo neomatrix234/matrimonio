@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Photo = { id:string; name:string; created:number; size:number };
-type Tile = { id:string; index:number; order:number; url:string };
+type Tile = { id:string; index:number; order:number; url:string; color:number[] };
 
 function gridForTotal(total:number){
   if(total <= 600) return {cols:30, rows:20};
@@ -119,7 +119,7 @@ export default function ScreenPage(){
       if(best<0) continue;
       assignedIds.current.add(p.id);
       usedIndexes.current.add(best);
-      setTiles(prev=>[...prev,{id:p.id,index:best,order:prev.length+1,url}]);
+      setTiles(prev=>[...prev,{id:p.id,index:best,order:prev.length+1,url,color:colors[best] || [128,128,128]}]);
       await new Promise(res=>setTimeout(res,80));
     }
   }
@@ -219,7 +219,11 @@ export default function ScreenPage(){
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
               return <div key={i} style={{background:'#222',border:isFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
-                {t && <img src={t.url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',animation:'pop .45s ease'}}/>}
+                {t && <button className="tileButton" onClick={()=>setSelectedTile(t)} title="Vedi foto">
+                  <img src={t.url} alt="" style={{animation:'pop .45s ease', filter:'contrast(1.04) saturate(.92)'}}/>
+                  <span className="tileTint" style={{background:`rgb(${t.color[0]},${t.color[1]},${t.color[2]})`}} />
+                  <span className="tileLight" />
+                </button>}
               </div>
             })}
           </div>
@@ -254,6 +258,30 @@ export default function ScreenPage(){
         <button onClick={()=>document.documentElement.requestFullscreen()}>Schermo intero</button>
         <button className="danger" onClick={stopMosaic}>Interrompi</button>
         <button onClick={restartMosaic}>Riparti</button>
+      </div>}
+
+
+      {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
+        <div className="tileModalBox" onClick={(e)=>e.stopPropagation()}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}}>
+            <h2 style={{margin:0}}>Foto tessera</h2>
+            <button className="btn danger" style={{width:'auto'}} onClick={()=>setSelectedTile(null)}>Chiudi</button>
+          </div>
+          <div className="tileModalGrid">
+            <div>
+              <p className="tileModalTitle">Originale</p>
+              <img src={selectedTile.url} alt="Foto originale" />
+            </div>
+            <div>
+              <p className="tileModalTitle">Modificata per il mosaico</p>
+              <div style={{position:'relative',background:'#222',borderRadius:14,overflow:'hidden'}}>
+                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:'contrast(1.04) saturate(.92)'}} />
+                <div style={{position:'absolute',inset:0,background:`rgb(${selectedTile.color[0]},${selectedTile.color[1]},${selectedTile.color[2]})`,mixBlendMode:'multiply',opacity:.58}} />
+                <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.08)'}} />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>}
 
       <style>{`@keyframes pop{0%{opacity:0;transform:scale(.75)}100%{opacity:1;transform:scale(1)}}`}</style>
