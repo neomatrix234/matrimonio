@@ -30,3 +30,8 @@ La foto finale si carica da:
 `/admin`
 
 Non viene mostrata durante la costruzione. Appare solo quando il mosaico è completo.
+
+
+## Upload multiplo
+
+La pagina `/upload` permette di selezionare anche più foto insieme. Le foto vengono ridotte e caricate una alla volta in automatico.
