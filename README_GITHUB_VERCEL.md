@@ -199,3 +199,14 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Poi compaiono poco alla volta le parti scomposte.
 - Alla fine c’è un flash bianco lento e poi resta l’immagine completa.
 - Il pulsante `Oggi sposi` è stato abbassato leggermente e reso un po’ più alto, così la scritta resta tutta dentro.
+
+
+## Raffinazione finale splash completa
+
+- Prima compare la luce bianca.
+- Poi compaiono i pezzi dell’immagine.
+- Poi arriva il flash finale.
+- Solo dopo il flash compare l’immagine completa intera.
+- I segni delle giunzioni sfumano grazie a un overlay finale pulito.
+- Il pulsante `Oggi sposi` è più alto dentro e un po’ più in basso.
+- Il box è quasi trasparente e l’immagine sotto fa un leggero effetto gonfia/sgonfia.
