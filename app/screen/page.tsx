@@ -4,13 +4,26 @@ import { useEffect, useRef, useState } from 'react';
 
 type Photo = { id:string; name:string; created:number; size:number };
 type Rgb = [number,number,number];
+type Lab = [number,number,number];
 
 type PhotoFeature = {
   id:string;
   url:string;
   avg:Rgb;
+  lab:Lab;
   lum:number;
   sat:number;
+  contrast:number;
+  useCount:number;
+};
+
+type TargetCell = {
+  index:number;
+  color:Rgb;
+  lab:Lab;
+  lum:number;
+  sat:number;
+  importance:number;
 };
 
 type Tile = {
@@ -22,6 +35,7 @@ type Tile = {
   color:Rgb;
   sourceColor:Rgb;
   matchScore:number;
+  repeated:number;
 };
 
 function gridForTotal(total:number){
@@ -49,19 +63,51 @@ function saturation(c:number[]){
   return max===0 ? 0 : (max-min)/max;
 }
 
-function colorDistancePhotoMosaic(a:PhotoFeature, target:Rgb){
-  const tl = luminance(target);
-  const ts = saturation(target);
-  const dr = a.avg[0]-target[0];
-  const dg = a.avg[1]-target[1];
-  const db = a.avg[2]-target[2];
+function srgbToLinear(v:number){
+  const x=v/255;
+  return x <= 0.04045 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4);
+}
 
-  // Distanza più vicina alla percezione umana: il verde e la luminosità contano di più.
-  const rgbDist = dr*dr*0.30 + dg*dg*0.58 + db*db*0.22;
-  const lumDist = Math.pow((a.lum - tl) * 255, 2) * 1.55;
-  const satDist = Math.pow((a.sat - ts) * 180, 2) * 0.22;
+function rgbToLab(rgb:Rgb):Lab{
+  const r=srgbToLinear(rgb[0]);
+  const g=srgbToLinear(rgb[1]);
+  const b=srgbToLinear(rgb[2]);
 
-  return rgbDist + lumDist + satDist;
+  let x = r*0.4124564 + g*0.3575761 + b*0.1804375;
+  let y = r*0.2126729 + g*0.7151522 + b*0.0721750;
+  let z = r*0.0193339 + g*0.1191920 + b*0.9503041;
+
+  x /= 0.95047;
+  y /= 1.00000;
+  z /= 1.08883;
+
+  const f=(t:number)=> t > 0.008856 ? Math.cbrt(t) : (7.787*t + 16/116);
+
+  const fx=f(x), fy=f(y), fz=f(z);
+  return [
+    116*fy - 16,
+    500*(fx-fy),
+    200*(fy-fz)
+  ];
+}
+
+function labDistance(a:Lab,b:Lab){
+  const dl=a[0]-b[0];
+  const da=a[1]-b[1];
+  const db=a[2]-b[2];
+  return dl*dl*1.35 + da*da + db*db;
+}
+
+function photoCellScore(photo:PhotoFeature, cell:TargetCell, maxReuse:number){
+  const lab = labDistance(photo.lab, cell.lab);
+  const lum = Math.pow((photo.lum-cell.lum)*100,2) * 0.70;
+  const sat = Math.pow((photo.sat-cell.sat)*80,2) * 0.20;
+
+  // Penalità progressiva: ripete le foto solo quando serve, ma evita di concentrarle troppo.
+  const reusePenalty = photo.useCount <= 0 ? 0 : Math.pow(photo.useCount, 2) * 820;
+  const overPenalty = photo.useCount >= maxReuse ? 999999999 : 0;
+
+  return lab + lum + sat + reusePenalty + overPenalty;
 }
 
 function loadImg(url:string): Promise<HTMLImageElement>{
@@ -77,67 +123,103 @@ function loadImg(url:string): Promise<HTMLImageElement>{
 async function photoFeature(url:string, id:string): Promise<PhotoFeature>{
   const img=await loadImg(url);
   const canvas=document.createElement('canvas');
-  canvas.width=18;
-  canvas.height=18;
+  canvas.width=24;
+  canvas.height=24;
   const ctx=canvas.getContext('2d', { willReadFrequently:true });
-  if(!ctx) return {id,url,avg:[128,128,128],lum:.5,sat:.2};
+  if(!ctx){
+    const avg:Rgb=[128,128,128];
+    return {id,url,avg,lab:rgbToLab(avg),lum:.5,sat:.2,contrast:.2,useCount:0};
+  }
 
-  const side=Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
-  const sx=Math.max(0,Math.floor(((img.naturalWidth || img.width)-side)/2));
-  const sy=Math.max(0,Math.floor(((img.naturalHeight || img.height)-side)/2));
-  ctx.drawImage(img,sx,sy,side,side,0,0,18,18);
+  const iw=img.naturalWidth || img.width;
+  const ih=img.naturalHeight || img.height;
+  const side=Math.min(iw,ih);
+  const sx=Math.max(0,Math.floor((iw-side)/2));
+  const sy=Math.max(0,Math.floor((ih-side)/2));
+  ctx.drawImage(img,sx,sy,side,side,0,0,24,24);
 
-  const data=ctx.getImageData(0,0,18,18).data;
+  const data=ctx.getImageData(0,0,24,24).data;
   let r=0,g=0,b=0,count=0;
+  let lSum=0,lSq=0;
 
-  // Media leggermente robusta: ignora pixel quasi bianchi/neri estremi solo se sono pochi dettagli.
   for(let i=0;i<data.length;i+=4){
     const pr=data[i], pg=data[i+1], pb=data[i+2];
     const l=(0.2126*pr+0.7152*pg+0.0722*pb)/255;
-    const weight = l<.04 || l>.97 ? .35 : 1;
+
+    // Evita che sfondi bianchi/neri dominino troppo la media.
+    const weight = l<.035 || l>.975 ? .28 : 1;
     r+=pr*weight; g+=pg*weight; b+=pb*weight; count+=weight;
+    lSum += l;
+    lSq += l*l;
   }
 
   const avg:Rgb=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];
-  return {id,url,avg,lum:luminance(avg),sat:saturation(avg)};
+  const mean=lSum/(data.length/4);
+  const variance=Math.max(0, lSq/(data.length/4)-mean*mean);
+  const contrast=Math.sqrt(variance);
+
+  return {
+    id,
+    url,
+    avg,
+    lab:rgbToLab(avg),
+    lum:luminance(avg),
+    sat:saturation(avg),
+    contrast,
+    useCount:0
+  };
 }
 
-async function targetColors(url:string, cols:number, rows:number): Promise<Rgb[]>{
+async function targetCells(url:string, cols:number, rows:number): Promise<TargetCell[]>{
   const img=await loadImg(url);
   const canvas=document.createElement('canvas');
   canvas.width=cols;
   canvas.height=rows;
   const ctx=canvas.getContext('2d', { willReadFrequently:true });
   if(!ctx) return [];
+
   ctx.drawImage(img,0,0,cols,rows);
   const data=ctx.getImageData(0,0,cols,rows).data;
-  const colors:Rgb[]=[];
-  for(let i=0;i<cols*rows;i++){
-    colors.push([data[i*4],data[i*4+1],data[i*4+2]]);
-  }
-  return colors;
-}
+  const cells:TargetCell[]=[];
 
-function chooseBestUnusedCell(feature:PhotoFeature, colors:Rgb[], total:number, used:Set<number>){
-  let best=-1;
-  let bestScore=Number.POSITIVE_INFINITY;
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      const i=y*cols+x;
+      const color:Rgb=[data[i*4],data[i*4+1],data[i*4+2]];
+      const lum=luminance(color);
+      const sat=saturation(color);
 
-  for(let i=0;i<total;i++){
-    if(used.has(i)) continue;
-    const target=colors[i] || [128,128,128];
-    const score=colorDistancePhotoMosaic(feature,target);
-    if(score<bestScore){
-      bestScore=score;
-      best=i;
+      const left=x>0 ? [data[(i-1)*4],data[(i-1)*4+1],data[(i-1)*4+2]] : color;
+      const right=x<cols-1 ? [data[(i+1)*4],data[(i+1)*4+1],data[(i+1)*4+2]] : color;
+      const up=y>0 ? [data[(i-cols)*4],data[(i-cols)*4+1],data[(i-cols)*4+2]] : color;
+      const down=y<rows-1 ? [data[(i+cols)*4],data[(i+cols)*4+1],data[(i+cols)*4+2]] : color;
+
+      const edge =
+        Math.abs(luminance(color)-luminance(left))*35 +
+        Math.abs(luminance(color)-luminance(right))*35 +
+        Math.abs(luminance(color)-luminance(up))*35 +
+        Math.abs(luminance(color)-luminance(down))*35;
+
+      // Le zone con volti, bordi, contrasti e colori saturi vengono riempite prima.
+      const importance = edge + sat*2.2 + Math.abs(lum-.5)*.55;
+
+      cells.push({
+        index:i,
+        color,
+        lab:rgbToLab(color),
+        lum,
+        sat,
+        importance
+      });
     }
   }
 
-  return {index:best, score:bestScore};
+  return cells;
 }
 
 async function createMosaicTile(url:string, target:Rgb): Promise<string>{
   const img=await loadImg(url);
-  const size=180;
+  const size=190;
   const canvas=document.createElement('canvas');
   canvas.width=size;
   canvas.height=size;
@@ -149,64 +231,72 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
   const side=Math.min(iw,ih);
   const sx=Math.max(0,Math.floor((iw-side)/2));
   const sy=Math.max(0,Math.floor((ih-side)/2));
-
   ctx.drawImage(img,sx,sy,side,side,0,0,size,size);
 
   const image=ctx.getImageData(0,0,size,size);
   const d=image.data;
 
   let srcLum=0;
+  let srcR=0,srcG=0,srcB=0;
   let count=0;
+
   for(let i=0;i<d.length;i+=4){
+    srcR+=d[i]; srcG+=d[i+1]; srcB+=d[i+2];
     srcLum += (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]);
     count++;
   }
-  srcLum = count ? srcLum/count : 128;
 
+  srcR/=count; srcG/=count; srcB/=count; srcLum/=count;
   const targetLum = 0.2126*target[0] + 0.7152*target[1] + 0.0722*target[2];
   const tSat = saturation(target);
-  const preserveTexture = 0.78;
-  const targetStrength = tSat < .12 ? .74 : .66;
+
+  // Più la zona è poco satura, più si preserva la fotografia originale.
+  const targetStrength = tSat < .10 ? .58 : tSat > .35 ? .76 : .68;
   const originalStrength = 1 - targetStrength;
+  const detailStrength = 0.88;
 
   for(let i=0;i<d.length;i+=4){
     const r=d[i], g=d[i+1], b=d[i+2];
     const pixLum = 0.2126*r + 0.7152*g + 0.0722*b;
-    const detail = (pixLum - srcLum) * preserveTexture;
+    const detail = (pixLum - srcLum) * detailStrength;
 
-    // Ricrea la foto partendo dal colore della cella finale e mantenendo luci/ombre della foto originale.
-    const mappedR = clamp(target[0] + detail);
-    const mappedG = clamp(target[1] + detail);
-    const mappedB = clamp(target[2] + detail);
+    // Trasferimento colore: usa il colore target come base, ma conserva luci/ombre della foto.
+    const targetR = clamp(target[0] + detail);
+    const targetG = clamp(target[1] + detail);
+    const targetB = clamp(target[2] + detail);
 
-    // Correzione luminosità per non perdere volti/dettagli.
-    const ratio = targetLum / Math.max(22, srcLum);
-    const correctedR = clamp(r * (0.72 + ratio*0.28));
-    const correctedG = clamp(g * (0.72 + ratio*0.28));
-    const correctedB = clamp(b * (0.72 + ratio*0.28));
+    // Bilanciamento: corregge anche la foto originale verso la luminosità della cella.
+    const ratio = targetLum / Math.max(20, srcLum);
+    const corrR = clamp(r * (0.68 + ratio*0.32));
+    const corrG = clamp(g * (0.68 + ratio*0.32));
+    const corrB = clamp(b * (0.68 + ratio*0.32));
 
-    d[i]   = clamp(mappedR*targetStrength + correctedR*originalStrength);
-    d[i+1] = clamp(mappedG*targetStrength + correctedG*originalStrength);
-    d[i+2] = clamp(mappedB*targetStrength + correctedB*originalStrength);
+    let nr = targetR*targetStrength + corrR*originalStrength;
+    let ng = targetG*targetStrength + corrG*originalStrength;
+    let nb = targetB*targetStrength + corrB*originalStrength;
 
-    // Micro-contrasto delicato per rendere leggibile la foto dentro la tessera.
-    d[i]   = clamp((d[i]-128)*1.07 + 128);
-    d[i+1] = clamp((d[i+1]-128)*1.07 + 128);
-    d[i+2] = clamp((d[i+2]-128)*1.07 + 128);
+    // Micro contrasto e recupero dettagli.
+    nr = (nr-128)*1.08 + 128;
+    ng = (ng-128)*1.08 + 128;
+    nb = (nb-128)*1.08 + 128;
+
+    d[i]=clamp(nr);
+    d[i+1]=clamp(ng);
+    d[i+2]=clamp(nb);
   }
 
   ctx.putImageData(image,0,0);
 
-  // Velo finale molto leggero sul colore target: aiuta il mosaico a leggere bene da lontano.
+  // Fusione finale molto delicata. Da lontano aiuta a leggere la foto finale, da vicino mantiene la foto invitato.
   ctx.globalCompositeOperation='soft-light';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.28;
+  ctx.globalAlpha=.22;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=1;
 
-  return canvas.toDataURL('image/jpeg', .82);
+  return canvas.toDataURL('image/jpeg', .84);
 }
 
 export default function ScreenPage(){
@@ -220,9 +310,8 @@ export default function ScreenPage(){
   const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
 
   const processing=useRef(false);
-  const assignedIds=useRef<Set<string>>(new Set());
   const usedIndexes=useRef<Set<number>>(new Set());
-  const targetColorRef=useRef<Rgb[]>([]);
+  const targetCellsRef=useRef<TargetCell[]>([]);
   const photoFeatureCache=useRef<Map<string,PhotoFeature>>(new Map());
   const currentRun=useRef(0);
 
@@ -241,6 +330,73 @@ export default function ScreenPage(){
     return f;
   }
 
+  function resetPhotoUseCounts(){
+    photoFeatureCache.current.forEach(f=>{ f.useCount=0; });
+  }
+
+  async function buildWallMosaic(photos:Photo[], total:number, runId:number, appendOnly:boolean){
+    if(!targetCellsRef.current.length) return;
+
+    const realPhotos=photos.slice().sort((a,b)=>a.created-b.created);
+    if(!realPhotos.length) return;
+
+    const maxReuse = Math.max(1, Math.ceil(total / realPhotos.length));
+    const batchCells = targetCellsRef.current
+      .filter(c=>!usedIndexes.current.has(c.index))
+      .sort((a,b)=>b.importance-a.importance);
+
+    const featureList:PhotoFeature[]=[];
+    for(const p of realPhotos){
+      if(paused || runId !== currentRun.current) return;
+      try{ featureList.push(await getFeature(p)); }catch{}
+    }
+
+    if(!appendOnly){
+      resetPhotoUseCounts();
+    }
+
+    for(const cell of batchCells){
+      if(paused || runId !== currentRun.current) break;
+
+      let best:PhotoFeature|null=null;
+      let bestScore=Number.POSITIVE_INFINITY;
+
+      // Scelta percettiva in LAB. Con poche foto consente ripetizioni bilanciate.
+      for(const f of featureList){
+        const score=photoCellScore(f,cell,maxReuse);
+        if(score<bestScore){
+          bestScore=score;
+          best=f;
+        }
+      }
+
+      if(!best) continue;
+      best.useCount += 1;
+
+      let modifiedUrl=best.url;
+      try{
+        modifiedUrl=await createMosaicTile(best.url, cell.color);
+      }catch(e){}
+
+      usedIndexes.current.add(cell.index);
+
+      setTiles(prev=>[...prev,{
+        id:best!.id,
+        index:cell.index,
+        order:prev.length+1,
+        url:best!.url,
+        modifiedUrl,
+        color:cell.color,
+        sourceColor:best!.avg,
+        matchScore:bestScore,
+        repeated:best!.useCount
+      }]);
+
+      if(usedIndexes.current.size >= total) break;
+      await new Promise(res=>setTimeout(res,total>2000?8:total>1200?14:24));
+    }
+  }
+
   async function fetchStatus(){
     if(paused) return;
     try{
@@ -249,64 +405,27 @@ export default function ScreenPage(){
       if(!s.ok) return;
       setStatus(s);
 
-      const {cols,rows}=gridForTotal(s.totalTiles || 600);
+      const total=s.totalTiles || 600;
+      const {cols,rows}=gridForTotal(total);
 
-      if(s.targetFileId && targetColorRef.current.length !== (cols*rows)){
-        targetColorRef.current=await targetColors(targetImageUrl(s), cols, rows);
+      if(s.targetFileId && targetCellsRef.current.length !== (cols*rows)){
+        targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
       }
 
-      if(!processing.current && targetColorRef.current.length && !replayStarted){
+      if(!processing.current && targetCellsRef.current.length && !replayStarted){
         processing.current=true;
-        await addNewPhotos(s.photos || [], s.totalTiles || 600, currentRun.current);
+        const oldCount=tiles.length;
+        await buildWallMosaic(s.photos || [], total, currentRun.current, oldCount>0);
         processing.current=false;
       }
 
-      if(s.complete && !final && !replayStarted){
+      if((s.photos || []).length > 0 && targetCellsRef.current.length && usedIndexes.current.size >= total && !final && !replayStarted){
         setReplayStarted(true);
         setCompleteMsg(true);
         setTimeout(()=>setCompleteMsg(false),2500);
-        setTimeout(()=>startReplay(s.totalTiles || 600),3000);
+        setTimeout(()=>startReplay(total),3000);
       }
     }catch(e){}
-  }
-
-  async function addNewPhotos(photos:Photo[], total:number, runId:number){
-    const available=photos.filter(p=>!assignedIds.current.has(p.id)).slice(0, Math.max(0,total-assignedIds.current.size));
-    for(const p of available){
-      if(paused || runId !== currentRun.current) break;
-
-      let feature:PhotoFeature;
-      try{
-        feature=await getFeature(p);
-      }catch(e){
-        feature={id:p.id,url:`/api/image?id=${p.id}`,avg:[128,128,128],lum:.5,sat:.2};
-      }
-
-      const colors=targetColorRef.current;
-      const best=chooseBestUnusedCell(feature, colors, total, usedIndexes.current);
-      if(best.index<0) continue;
-
-      const targetColor=colors[best.index] || [128,128,128];
-      let modifiedUrl=feature.url;
-      try{
-        modifiedUrl=await createMosaicTile(feature.url, targetColor);
-      }catch(e){}
-
-      assignedIds.current.add(p.id);
-      usedIndexes.current.add(best.index);
-      setTiles(prev=>[...prev,{
-        id:p.id,
-        index:best.index,
-        order:prev.length+1,
-        url:feature.url,
-        modifiedUrl,
-        color:targetColor,
-        sourceColor:feature.avg,
-        matchScore:best.score
-      }]);
-
-      await new Promise(res=>setTimeout(res, total > 1500 ? 18 : total > 1000 ? 28 : 45));
-    }
   }
 
   function stopMosaic(){
@@ -324,9 +443,9 @@ export default function ScreenPage(){
     setReplayStarted(false);
     setFinal(false);
     setCompleteMsg(false);
-    assignedIds.current=new Set();
     usedIndexes.current=new Set();
-    targetColorRef.current=[];
+    targetCellsRef.current=[];
+    resetPhotoUseCounts();
     setTiles([]);
     setTimeout(()=>fetchStatus(),250);
   }
@@ -338,16 +457,20 @@ export default function ScreenPage(){
     setFinal(false);
     setCompleteMsg(false);
     setReplayStarted(true);
-    assignedIds.current=new Set();
     usedIndexes.current=new Set();
+    resetPhotoUseCounts();
     setTiles([]);
 
     const r=await fetch('/api/status?x='+Date.now());
     const s=await r.json();
-    const currentPhotos:Photo[]=(s.photos || []).slice(0,total);
     setStatus(s);
 
-    await addNewPhotos(currentPhotos,total,runId);
+    const {cols,rows}=gridForTotal(total);
+    if(s.targetFileId){
+      targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
+    }
+
+    await buildWallMosaic((s.photos || []),total,runId,false);
     if(runId===currentRun.current && !paused){
       setTimeout(()=>setFinal(true), 1200);
     }
@@ -355,7 +478,7 @@ export default function ScreenPage(){
 
   useEffect(()=>{
     fetchStatus();
-    const id=setInterval(fetchStatus,3500);
+    const id=setInterval(fetchStatus,6500);
     const fs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange',fs);
     return ()=>{
@@ -372,6 +495,7 @@ export default function ScreenPage(){
   const targetUrl=targetImageUrl(status);
   const count=tiles.length;
   const pct=Math.min(100,Math.round((count/total)*100));
+  const photoCount=(status?.photos || []).length;
 
   return (
     <div style={{height:'100vh',background:'#111',color:'#fff',fontFamily:'Arial, sans-serif',overflow:'hidden',position:'relative'}}>
@@ -381,7 +505,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Foto finale caricata' : 'Carica foto finale da /admin'} · {pct}%
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore LAB wall mosaic attivo' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
@@ -457,6 +581,9 @@ export default function ScreenPage(){
             <div>
               <p className="tileModalTitle">Modificata per il mosaico</p>
               <img src={selectedTile.modifiedUrl} alt="Foto modificata per il mosaico" />
+              <p style={{fontSize:13,opacity:.72,marginTop:8}}>
+                Colore target: RGB {selectedTile.color.join(', ')} · ripetizione foto: {selectedTile.repeated}
+              </p>
             </div>
           </div>
         </div>

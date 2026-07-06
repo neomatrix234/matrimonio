@@ -277,3 +277,18 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Le animazioni dei ritagli usano lo stesso rettangolo verticale anche su desktop.
 - Il pulsante `Oggi sposi` segue la stessa posizione della versione smartphone.
 - Quando si apre il box, lo sfondo resta nello stesso formato verticale anche su PC.
+
+
+## Wall mosaic LAB migliorato
+
+- La pagina `/screen` usa ora un motore stile photomosaic più adatto al wall mosaic.
+- Non usa Python esterno, così resta compatibile con GitHub/Vercel.
+- Migliorie principali:
+  - conversione RGB → LAB;
+  - distanza colore percettiva;
+  - luminosità e saturazione nella scelta della tessera;
+  - priorità alle celle più importanti della foto finale;
+  - ripetizione controllata delle foto se ci sono meno foto delle tessere;
+  - rielaborazione reale di ogni tessera con Canvas;
+  - trasferimento colore mantenendo luci/ombre della foto originale.
+- È una soluzione web equivalente nello scopo ai progetti Python/OpenCV, ma senza server dedicato.
