@@ -129,3 +129,12 @@ Novità:
 - Il mosaico ora applica una tinta colore alle tessere, così l’immagine finale si legge meglio.
 - Durante e dopo la costruzione puoi cliccare una tessera per vedere la foto originale e la versione modificata per il mosaico, senza interrompere il caricamento.
 - Il messaggio “Accesso effettuato” in Admin sparisce da solo dopo circa 1,5 secondi.
+
+
+## Upload ancora più semplice e mosaico automatico
+
+- Nella pagina iniziale l’invitato vede solo `Carica foto`.
+- Dopo aver scelto la foto, compare `Invia foto`.
+- Non ci sono altre scelte o impostazioni per l’utente.
+- Dopo il ringraziamento, dopo 5 secondi torna automaticamente allo stato iniziale.
+- Il mosaico usa automaticamente un adattamento colore più forte: selezione per colore, filtro luminosità/contrasto e tinta intensa della cella. Non devi regolare nulla.

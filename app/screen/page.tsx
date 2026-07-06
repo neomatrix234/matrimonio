@@ -52,6 +52,17 @@ async function targetColors(url:string, cols:number, rows:number): Promise<numbe
   return colors;
 }
 
+function luminance(c:number[]){
+  return (0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]) / 255;
+}
+
+function tileFilter(c:number[]){
+  const l = luminance(c);
+  const brightness = Math.max(0.42, Math.min(1.55, 0.55 + l * 1.25));
+  const contrast = l < 0.35 ? 1.22 : l > 0.72 ? 0.94 : 1.08;
+  return `brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)}) saturate(.78)`;
+}
+
 export default function ScreenPage(){
   const [status,setStatus]=useState<any>(null);
   const [tiles,setTiles]=useState<Tile[]>([]);
@@ -220,7 +231,7 @@ export default function ScreenPage(){
               const t=tileMap.get(i);
               return <div key={i} style={{background:'#222',border:isFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
                 {t && <button className="tileButton" onClick={()=>setSelectedTile(t)} title="Vedi foto">
-                  <img src={t.url} alt="" style={{animation:'pop .45s ease', filter:'contrast(1.04) saturate(.92)'}}/>
+                  <img src={t.url} alt="" style={{animation:'pop .45s ease', filter:tileFilter(t.color)}}/>
                   <span className="tileTint" style={{background:`rgb(${t.color[0]},${t.color[1]},${t.color[2]})`}} />
                   <span className="tileLight" />
                 </button>}
@@ -275,9 +286,9 @@ export default function ScreenPage(){
             <div>
               <p className="tileModalTitle">Modificata per il mosaico</p>
               <div style={{position:'relative',background:'#222',borderRadius:14,overflow:'hidden'}}>
-                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:'contrast(1.04) saturate(.92)'}} />
-                <div style={{position:'absolute',inset:0,background:`rgb(${selectedTile.color[0]},${selectedTile.color[1]},${selectedTile.color[2]})`,mixBlendMode:'multiply',opacity:.58}} />
-                <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.08)'}} />
+                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:tileFilter(t.color)}} />
+                <div style={{position:'absolute',inset:0,background:`rgb(${selectedTile.color[0]},${selectedTile.color[1]},${selectedTile.color[2]})`,mixBlendMode:'multiply',opacity:.72}} />
+                <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.03)'}} />
               </div>
             </div>
           </div>
