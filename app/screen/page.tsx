@@ -71,6 +71,7 @@ export default function ScreenPage(){
   const [isFullscreen,setIsFullscreen]=useState(false);
   const [replayStarted,setReplayStarted]=useState(false);
   const [paused,setPaused]=useState(false);
+  const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
 
   const processing=useRef(false);
   const assignedIds=useRef<Set<string>>(new Set());

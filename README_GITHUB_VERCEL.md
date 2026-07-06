@@ -138,3 +138,8 @@ Novità:
 - Non ci sono altre scelte o impostazioni per l’utente.
 - Dopo il ringraziamento, dopo 5 secondi torna automaticamente allo stato iniziale.
 - Il mosaico usa automaticamente un adattamento colore più forte: selezione per colore, filtro luminosità/contrasto e tinta intensa della cella. Non devi regolare nulla.
+
+
+## Fix build Vercel
+
+Corretto errore TypeScript in `/app/screen/page.tsx`: variabile `selectedTile` dichiarata correttamente.
