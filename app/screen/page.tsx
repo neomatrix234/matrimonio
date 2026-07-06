@@ -287,7 +287,7 @@ export default function ScreenPage(){
             <div>
               <p className="tileModalTitle">Modificata per il mosaico</p>
               <div style={{position:'relative',background:'#222',borderRadius:14,overflow:'hidden'}}>
-                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:tileFilter(t.color)}} />
+                <img src={selectedTile.url} alt="Foto modificata" style={{display:'block',width:'100%',maxHeight:'65vh',objectFit:'contain',filter:tileFilter(selectedTile.color)}} />
                 <div style={{position:'absolute',inset:0,background:`rgb(${selectedTile.color[0]},${selectedTile.color[1]},${selectedTile.color[2]})`,mixBlendMode:'multiply',opacity:.72}} />
                 <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.03)'}} />
               </div>

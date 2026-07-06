@@ -143,3 +143,8 @@ Novità:
 ## Fix build Vercel
 
 Corretto errore TypeScript in `/app/screen/page.tsx`: variabile `selectedTile` dichiarata correttamente.
+
+
+## Fix build Vercel 2
+
+Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera ora usa `selectedTile.color` invece di `t.color`.
