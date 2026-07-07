@@ -42,6 +42,7 @@ const PROFESSIONAL_MOSAIC = {
   tintOpacity: 0.38,
   preserveOriginal: 0.08,
   targetSampleFactor: 4,
+  tileCanvasSize: 190,
 };
 
 function srgbToLinear01(v:number){
@@ -322,9 +323,9 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
     const right=x<cols-1?cells[cell.index+1]:cell;
     const up=y>0?cells[cell.index-cols]:cell;
     const down=y<rows-1?cells[cell.index+cols]:cell;
-    const upDiff = Math.abs(cell.lum-up.lum)*34;
-    const downDiff = Math.abs(cell.lum-down.lum)*34;
-    const finalImportance = Math.abs(cell.lum-left.lum)*34 + Math.abs(cell.lum-right.lum)*34 + upDiff + downDiff + cell.sat*1.8 + Math.abs(cell.lum-.5)*.55;
+    const upDiff = Math.abs(cell.lum - up.lum)*34;
+    const downDiff = Math.abs(cell.lum - down.lum)*34;
+    const finalImportance = Math.abs(cell.lum - left.lum)*34 + Math.abs(cell.lum - right.lum)*34 + upDiff + downDiff + cell.sat*1.8 + Math.abs(cell.lum-.5)*.55;
     return {...cell, importance: finalImportance};
   });
 }

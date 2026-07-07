@@ -361,3 +361,10 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Tinting professionale multiply/screen con opacità controllata.
 - Ricolorazione delle tessere molto più fedele al colore della cella.
 - Admin: titolo login centrato e sezione anteprima/schermo più chiara.
+
+
+## Fix build Vercel
+
+- Corretto errore TypeScript:
+  - `Property 'tileCanvasSize' does not exist`
+- Aggiunta la proprietà `tileCanvasSize: 190` dentro `PROFESSIONAL_MOSAIC`.
