@@ -415,3 +415,14 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - celle a destra tendono a usare il lato destro;
   - celle in alto / basso fanno lo stesso verticalmente.
 - Le foto già quadrate o già ritagliate vengono usate normalmente.
+
+
+## Adattamento ispirato a MacOSaiX
+
+Dal progetto MacOSaiX allegato non è stato copiato codice Objective-C: il sorgente indica copyright/all rights reserved. Sono stati però adattati i concetti tecnici utili al tuo progetto web:
+
+- confronto non solo sul colore medio, ma anche su una piccola patch 8×8 della tessera;
+- la cella target conserva una mini-patch dell'immagine finale;
+- il matching usa LAB/CIEDE2000 + somiglianza della struttura luminosa;
+- la tessera viene ricolorata usando anche il dettaglio locale della cella, non solo il colore medio;
+- resta il riuso controllato e l'anti-vicinanza per evitare macchie piatte.

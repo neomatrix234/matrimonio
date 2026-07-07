@@ -14,6 +14,7 @@ type PhotoFeature = {
   lum:number;
   sat:number;
   contrast:number;
+  patchLum:number[];
   useCount:number;
 };
 
@@ -23,6 +24,8 @@ type TargetCell = {
   lab:Lab;
   lum:number;
   sat:number;
+  patch:Rgb[];
+  patchLum:number[];
   importance:number;
 };
 
@@ -39,10 +42,12 @@ type Tile = {
 };
 
 const PROFESSIONAL_MOSAIC = {
-  tintOpacity: 0.38,
-  preserveOriginal: 0.08,
-  targetSampleFactor: 4,
+  tintOpacity: 0.12,
+  preserveOriginal: 0.06,
+  targetSampleFactor: 8,
   tileCanvasSize: 190,
+  patchSize: 8,
+  patternWeight: 5.5,
 };
 
 function srgbToLinear01(v:number){
@@ -216,6 +221,44 @@ function clamp01(v:number){
   return Math.max(0, Math.min(1, v));
 }
 
+function patchStats(values:number[]){
+  if(!values.length) return {mean:.5, std:.1};
+  let sum=0;
+  for(const v of values) sum += v;
+  const mean=sum/values.length;
+  let sq=0;
+  for(const v of values) sq += (v-mean)*(v-mean);
+  const std=Math.sqrt(Math.max(0.0008, sq/values.length));
+  return {mean,std};
+}
+
+function normalizedPatchDistance(a:number[], b:number[]){
+  const n=Math.min(a.length,b.length);
+  if(!n) return 0;
+  const as=patchStats(a);
+  const bs=patchStats(b);
+  let sum=0;
+  for(let i=0;i<n;i++){
+    const av=(a[i]-as.mean)/as.std;
+    const bv=(b[i]-bs.mean)/bs.std;
+    const diff=av-bv;
+    sum += diff*diff;
+  }
+  return sum/n;
+}
+
+function patchContrast(values:number[]){
+  return patchStats(values).std;
+}
+
+function patchColorAt(patch:Rgb[]|undefined, xNorm:number, yNorm:number, fallback:Rgb):Rgb{
+  const ps=PROFESSIONAL_MOSAIC.patchSize;
+  if(!patch || patch.length < ps*ps) return fallback;
+  const x=Math.max(0, Math.min(ps-1, Math.floor(xNorm*ps)));
+  const y=Math.max(0, Math.min(ps-1, Math.floor(yNorm*ps)));
+  return patch[y*ps+x] || fallback;
+}
+
 function sigmoid(x:number){
   return 1 / (1 + Math.exp(-x));
 }
@@ -257,11 +300,12 @@ function labDistance(a:Lab,b:Lab){
 
 function photoCellScore(photo:PhotoFeature, cell:TargetCell, maxReuse:number){
   const de = deltaE2000(photo.lab, cell.lab);
-  const lum = Math.pow((photo.lum-cell.lum)*100,2) * 0.22;
-  const sat = Math.pow((photo.sat-cell.sat)*60,2) * 0.06;
-  const reusePenalty = photo.useCount <= 0 ? 0 : Math.pow(photo.useCount, 2) * 14;
+  const lum = Math.pow((photo.lum-cell.lum)*100,2) * 0.16;
+  const sat = Math.pow((photo.sat-cell.sat)*55,2) * 0.05;
+  const pattern = normalizedPatchDistance(photo.patchLum, cell.patchLum) * PROFESSIONAL_MOSAIC.patternWeight;
+  const reusePenalty = photo.useCount <= 0 ? 0 : Math.pow(photo.useCount, 2) * 12;
   const overPenalty = photo.useCount >= maxReuse ? 999999999 : 0;
-  return de*de + lum + sat + reusePenalty + overPenalty;
+  return de*de + lum + sat + pattern + reusePenalty + overPenalty;
 }
 
 function loadImg(url:string): Promise<HTMLImageElement>{
@@ -276,41 +320,38 @@ function loadImg(url:string): Promise<HTMLImageElement>{
 
 async function photoFeature(url:string, id:string): Promise<PhotoFeature>{
   const img=await loadImg(url);
+  const patchSize=PROFESSIONAL_MOSAIC.patchSize;
   const canvas=document.createElement('canvas');
-  canvas.width=24;
-  canvas.height=24;
+  canvas.width=patchSize;
+  canvas.height=patchSize;
   const ctx=canvas.getContext('2d', { willReadFrequently:true });
   if(!ctx){
     const avg:Rgb=[128,128,128];
-    return {id,url,avg,lab:rgbToLab(avg),lum:.5,sat:.2,contrast:.2,useCount:0};
+    return {id,url,avg,lab:rgbToLab(avg),lum:.5,sat:.2,contrast:.2,patchLum:[],useCount:0};
   }
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
-  const side=Math.min(iw,ih);
-  const sx=Math.max(0,Math.floor((iw-side)/2));
-  const sy=Math.max(0,Math.floor((ih-side)/2));
-  ctx.drawImage(img,sx,sy,side,side,0,0,24,24);
+  const crop=adaptiveSquareCrop(iw,ih,.5,.5);
+  ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,patchSize,patchSize);
 
-  const data=ctx.getImageData(0,0,24,24).data;
+  const data=ctx.getImageData(0,0,patchSize,patchSize).data;
   let r=0,g=0,b=0,count=0;
-  let lSum=0,lSq=0;
+  const patchLum:number[]=[];
 
   for(let i=0;i<data.length;i+=4){
     const pr=data[i], pg=data[i+1], pb=data[i+2];
-    const l=(0.2126*pr+0.7152*pg+0.0722*pb)/255;
-
-    // Evita che sfondi bianchi/neri dominino troppo la media.
-    const weight = l<.035 || l>.975 ? .28 : 1;
-    r+=pr*weight; g+=pg*weight; b+=pb*weight; count+=weight;
-    lSum += l;
-    lSq += l*l;
+    const l=luminance([pr,pg,pb]);
+    const weight = l<.025 || l>.985 ? .35 : 1;
+    r+=srgbToLinear01(pr)*weight;
+    g+=srgbToLinear01(pg)*weight;
+    b+=srgbToLinear01(pb)*weight;
+    count+=weight;
+    patchLum.push(l);
   }
 
-  const avg:Rgb=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];
-  const mean=lSum/(data.length/4);
-  const variance=Math.max(0, lSq/(data.length/4)-mean*mean);
-  const contrast=Math.sqrt(variance);
+  const avg:Rgb=linearAverageToRgb(r,g,b,count);
+  const contrast=patchContrast(patchLum);
 
   return {
     id,
@@ -320,14 +361,16 @@ async function photoFeature(url:string, id:string): Promise<PhotoFeature>{
     lum:luminance(avg),
     sat:saturation(avg),
     contrast,
+    patchLum,
     useCount:0
   };
 }
 
 async function targetCells(url:string, cols:number, rows:number): Promise<TargetCell[]>{
   const img=await loadImg(url);
-  const factor=PROFESSIONAL_MOSAIC.targetSampleFactor;
-  const w=cols*factor, h=rows*factor;
+  const patchSize=PROFESSIONAL_MOSAIC.patchSize;
+  const w=cols*patchSize;
+  const h=rows*patchSize;
   const canvas=document.createElement('canvas');
   canvas.width=w;
   canvas.height=h;
@@ -340,21 +383,28 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
   for(let cy=0;cy<rows;cy++){
     for(let cx=0;cx<cols;cx++){
       let sr=0,sg=0,sb=0,count=0;
-      for(let yy=0;yy<factor;yy++){
-        for(let xx=0;xx<factor;xx++){
-          const px=cx*factor+xx, py=cy*factor+yy;
+      const patch:Rgb[]=[];
+      const patchLum:number[]=[];
+
+      for(let yy=0;yy<patchSize;yy++){
+        for(let xx=0;xx<patchSize;xx++){
+          const px=cx*patchSize+xx, py=cy*patchSize+yy;
           const idx=(py*w+px)*4;
-          sr+=srgbToLinear01(data[idx]);
-          sg+=srgbToLinear01(data[idx+1]);
-          sb+=srgbToLinear01(data[idx+2]);
+          const rgb:Rgb=[data[idx],data[idx+1],data[idx+2]];
+          patch.push(rgb);
+          patchLum.push(luminance(rgb));
+          sr+=srgbToLinear01(rgb[0]);
+          sg+=srgbToLinear01(rgb[1]);
+          sb+=srgbToLinear01(rgb[2]);
           count++;
         }
       }
+
       const color:Rgb=linearAverageToRgb(sr,sg,sb,count);
       const lum=luminance(color);
       const sat=saturation(color);
       const index=cy*cols+cx;
-      cells.push({index,color,lab:rgbToLab(color),lum,sat,importance:0});
+      cells.push({index,color,lab:rgbToLab(color),lum,sat,patch,patchLum,importance:0});
     }
   }
 
@@ -365,14 +415,14 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
     const right=x<cols-1?cells[cell.index+1]:cell;
     const up=y>0?cells[cell.index-cols]:cell;
     const down=y<rows-1?cells[cell.index+cols]:cell;
-    const upDiff = Math.abs(cell.lum - up.lum)*34;
-    const downDiff = Math.abs(cell.lum - down.lum)*34;
-    const finalImportance = Math.abs(cell.lum - left.lum)*34 + Math.abs(cell.lum - right.lum)*34 + upDiff + downDiff + cell.sat*1.8 + Math.abs(cell.lum-.5)*.55;
-    return {...cell, importance: finalImportance};
+    const edge = Math.abs(cell.lum-left.lum)*34 + Math.abs(cell.lum-right.lum)*34 + Math.abs(cell.lum-up.lum)*34 + Math.abs(cell.lum-down.lum)*34;
+    const detail = patchContrast(cell.patchLum)*3.5;
+    const importance = edge + detail + cell.sat*1.8 + Math.abs(cell.lum-.5)*.55;
+    return {...cell, importance};
   });
 }
 
-async function createMosaicTile(url:string, target:Rgb, xNorm:number=0.5, yNorm:number=0.5): Promise<string>{
+async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xNorm:number=0.5, yNorm:number=0.5): Promise<string>{
   const img=await loadImg(url);
   const size=PROFESSIONAL_MOSAIC.tileCanvasSize || 190;
   const canvas=document.createElement('canvas');
@@ -397,28 +447,35 @@ async function createMosaicTile(url:string, target:Rgb, xNorm:number=0.5, yNorm:
   }
   const range=Math.max(0.08, maxLum-minLum);
 
-  const [th, ts, tl] = rgbToHsl(target);
-  const darkTone  = hslToRgb(th, clamp01(ts*0.96 + 0.02), clamp01(tl*0.16 + 0.015));
-  const midTone   = target;
-  const lightTone = hslToRgb(th, clamp01(ts*0.42 + 0.08), clamp01(tl + (1-tl)*0.56));
   const preserve = PROFESSIONAL_MOSAIC.preserveOriginal;
 
   for(let i=0;i<d.length;i+=4){
+    const pixelIndex=i/4;
+    const px=pixelIndex%size;
+    const py=Math.floor(pixelIndex/size);
+    const localTarget = patchColorAt(targetPatch, px/(size-1), py/(size-1), target);
+    const guidedTarget = mixRgb(target, localTarget, 0.58);
+
+    const [th, ts, tl] = rgbToHsl(guidedTarget);
+    const darkTone  = hslToRgb(th, clamp01(ts*0.96 + 0.02), clamp01(tl*0.16 + 0.015));
+    const lightTone = hslToRgb(th, clamp01(ts*0.42 + 0.08), clamp01(tl + (1-tl)*0.56));
+
     const r=d[i], g=d[i+1], b=d[i+2];
     let tone = clamp01((luminance([r,g,b]) - minLum) / range);
     tone = Math.pow(tone, 0.90);
-    const mapped = tone < 0.5 ? mixRgb(darkTone, midTone, tone*2) : mixRgb(midTone, lightTone, (tone-0.5)*2);
-    d[i]   = clamp((mapped[0]*(1-preserve)+r*preserve-128)*1.025+128);
-    d[i+1] = clamp((mapped[1]*(1-preserve)+g*preserve-128)*1.025+128);
-    d[i+2] = clamp((mapped[2]*(1-preserve)+b*preserve-128)*1.025+128);
+    const mapped = tone < 0.5 ? mixRgb(darkTone, guidedTarget, tone*2) : mixRgb(guidedTarget, lightTone, (tone-0.5)*2);
+    d[i]   = clamp((mapped[0]*(1-preserve)+r*preserve-128)*1.02+128);
+    d[i+1] = clamp((mapped[1]*(1-preserve)+g*preserve-128)*1.02+128);
+    d[i+2] = clamp((mapped[2]*(1-preserve)+b*preserve-128)*1.02+128);
   }
 
   ctx.putImageData(image,0,0);
 
-  // Leggera velatura finale locale al mosaico: non modifica mai il file originale su Drive.
+  // Versione ispirata a MacOSaiX: confronto/ricostruzione a patch, non solo media colore.
+  // Nessun doppio multiply+screen sporco: solo una velatura leggera e pulita.
   ctx.globalCompositeOperation='source-over';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=0.14;
+  ctx.globalAlpha=PROFESSIONAL_MOSAIC.tintOpacity;
   ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
 
@@ -549,7 +606,7 @@ export default function ScreenPage(){
       try{
         const xNorm = cols <= 1 ? 0.5 : (bestCell.index % cols) / (cols - 1);
         const yNorm = rows <= 1 ? 0.5 : Math.floor(bestCell.index / cols) / (rows - 1);
-        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, xNorm, yNorm);
+        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, bestCell.patch, xNorm, yNorm);
       }catch(e){}
 
       usedIndexes.current.add(bestCell.index);
@@ -751,7 +808,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore professionale LAB/CIEDE2000 attivo · per i test completa il mosaico anche con poche foto riusando le tessere disponibili' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore MacOSaiX-style: patch matching + LAB/CIEDE2000 · test anche con poche foto' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>

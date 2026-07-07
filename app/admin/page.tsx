@@ -588,7 +588,7 @@ export default function AdminPage(){
       // Overlay leggero della foto finale: aiuta a leggere la figura, ma senza coprire le tessere.
       const targetImg=await qLoadImg(targetUrlLocal);
       ctx.globalCompositeOperation='source-over';
-      ctx.globalAlpha=.18;
+      ctx.globalAlpha=.12;
       ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
       ctx.globalAlpha=1;
 
