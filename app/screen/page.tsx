@@ -63,6 +63,68 @@ function saturation(c:number[]){
   return max===0 ? 0 : (max-min)/max;
 }
 
+
+function mix(a:number,b:number,t:number){
+  return a + (b-a)*t;
+}
+
+function rgbToHsl(rgb:Rgb): [number,number,number]{
+  const r=rgb[0]/255, g=rgb[1]/255, b=rgb[2]/255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h=0, s=0;
+  const l=(max+min)/2;
+  if(max!==min){
+    const d=max-min;
+    s=l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d + (g<b ? 6 : 0); break;
+      case g: h=(b-r)/d + 2; break;
+      default: h=(r-g)/d + 4; break;
+    }
+    h/=6;
+  }
+  return [h,s,l];
+}
+
+function hue2rgb(p:number,q:number,t:number){
+  if(t<0) t+=1;
+  if(t>1) t-=1;
+  if(t<1/6) return p+(q-p)*6*t;
+  if(t<1/2) return q;
+  if(t<2/3) return p+(q-p)*(2/3-t)*6;
+  return p;
+}
+
+function hslToRgb(h:number,s:number,l:number): Rgb{
+  let r:number,g:number,b:number;
+  if(s===0){
+    r=g=b=l;
+  }else{
+    const q=l<0.5 ? l*(1+s) : l+s-l*s;
+    const p=2*l-q;
+    r=hue2rgb(p,q,h+1/3);
+    g=hue2rgb(p,q,h);
+    b=hue2rgb(p,q,h-1/3);
+  }
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+
+function mixRgb(a:Rgb,b:Rgb,t:number): Rgb{
+  return [
+    Math.round(mix(a[0],b[0],t)),
+    Math.round(mix(a[1],b[1],t)),
+    Math.round(mix(a[2],b[2],t))
+  ];
+}
+
+function clamp01(v:number){
+  return Math.max(0, Math.min(1, v));
+}
+
+function sigmoid(x:number){
+  return 1 / (1 + Math.exp(-x));
+}
+
 function srgbToLinear(v:number){
   const x=v/255;
   return x <= 0.04045 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4);
@@ -236,76 +298,75 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
   const image=ctx.getImageData(0,0,size,size);
   const d=image.data;
 
-  let srcLum=0;
-  let srcR=0,srcG=0,srcB=0;
+  let lumSum=0;
+  let lumSq=0;
   let count=0;
 
   for(let i=0;i<d.length;i+=4){
-    srcR+=d[i]; srcG+=d[i+1]; srcB+=d[i+2];
-    srcLum += (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]);
+    const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
+    lumSum += lum;
+    lumSq += lum*lum;
     count++;
   }
 
-  srcR/=count; srcG/=count; srcB/=count; srcLum/=count;
-  const targetLum = 0.2126*target[0] + 0.7152*target[1] + 0.0722*target[2];
-  const tSat = saturation(target);
+  const mean = count ? lumSum / count : 0.5;
+  const variance = count ? Math.max(0.0005, lumSq / count - mean*mean) : 0.03;
+  const std = Math.sqrt(variance);
 
-  // Ricolorazione aggressiva per far leggere davvero la foto finale anche con poche tessere.
-  // Mantiene solo le luci/ombre principali della foto invitato.
-  const targetStrength = tSat < .10 ? .88 : tSat > .35 ? .94 : .91;
-  const originalStrength = 1 - targetStrength;
-  const detailStrength = 0.62;
+  // Costruzione tessera in stile vero fotomosaico:
+  // il colore della cella finale domina quasi del tutto,
+  // della foto originale restano soprattutto luci/ombre e microstruttura.
+  const [th, ts, tl] = rgbToHsl(target);
+
+  const darkTone  = hslToRgb(th, clamp01(ts*0.95 + 0.03), clamp01(tl*0.22 + 0.03));
+  const midTone   = target;
+  const lightTone = hslToRgb(th, clamp01(ts*0.55 + 0.12), clamp01(tl + (1-tl)*0.42));
+
+  const preserveOriginal = 0.06;
 
   for(let i=0;i<d.length;i+=4){
     const r=d[i], g=d[i+1], b=d[i+2];
-    const pixLum = 0.2126*r + 0.7152*g + 0.0722*b;
-    const detail = (pixLum - srcLum) * detailStrength;
+    const lum=(0.2126*r + 0.7152*g + 0.0722*b) / 255;
 
-    // Trasferimento colore: usa il colore target come base, ma conserva luci/ombre della foto.
-    const targetR = clamp(target[0] + detail);
-    const targetG = clamp(target[1] + detail);
-    const targetB = clamp(target[2] + detail);
+    // Normalizza la luminosità della foto e la mappa in modo regolare.
+    const normalized = (lum - mean) / Math.max(0.001, std);
+    const tonePos = clamp01(sigmoid(normalized * 1.18));
 
-    // Bilanciamento: corregge anche la foto originale verso la luminosità della cella.
-    const ratio = targetLum / Math.max(20, srcLum);
-    const corrR = clamp(r * (0.68 + ratio*0.32));
-    const corrG = clamp(g * (0.68 + ratio*0.32));
-    const corrB = clamp(b * (0.68 + ratio*0.32));
+    let mapped:Rgb;
+    if(tonePos < 0.5){
+      mapped = mixRgb(darkTone, midTone, tonePos * 2);
+    }else{
+      mapped = mixRgb(midTone, lightTone, (tonePos - 0.5) * 2);
+    }
 
-    let nr = targetR*targetStrength + corrR*originalStrength;
-    let ng = targetG*targetStrength + corrG*originalStrength;
-    let nb = targetB*targetStrength + corrB*originalStrength;
+    // Piccolissimo contributo del pixel originale per non perdere del tutto il selfie.
+    const nr = mapped[0] * (1 - preserveOriginal) + r * preserveOriginal;
+    const ng = mapped[1] * (1 - preserveOriginal) + g * preserveOriginal;
+    const nb = mapped[2] * (1 - preserveOriginal) + b * preserveOriginal;
 
-    // Micro contrasto controllato: la tessera resta leggibile ma domina il colore target.
-    nr = (nr-128)*1.03 + 128;
-    ng = (ng-128)*1.03 + 128;
-    nb = (nb-128)*1.03 + 128;
-
-    d[i]=clamp(nr);
-    d[i+1]=clamp(ng);
-    d[i+2]=clamp(nb);
+    d[i]   = clamp((nr - 128) * 1.02 + 128);
+    d[i+1] = clamp((ng - 128) * 1.02 + 128);
+    d[i+2] = clamp((nb - 128) * 1.02 + 128);
   }
 
   ctx.putImageData(image,0,0);
 
-  // Fusione finale forte: serve per un vero wall mosaic leggibile da lontano.
+  // Finitura sistematica: rafforza il legame col colore target
+  // e rende il mosaico più leggibile da lontano.
   ctx.globalCompositeOperation='multiply';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.42;
+  ctx.globalAlpha=.26;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='screen';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.30;
+  ctx.globalAlpha=.18;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=.18;
-  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
 
-  return canvas.toDataURL('image/jpeg', .84);
+  return canvas.toDataURL('image/jpeg', .86);
 }
 
 export default function ScreenPage(){

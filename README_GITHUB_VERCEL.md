@@ -319,3 +319,19 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Splash su PC corretto:
   - una sola area verticale 9:16 centrata;
   - niente doppia schermata a sinistra + centro.
+
+
+## Colorizzazione sistematica fotomosaico
+
+- Migliorata la trasformazione delle tessere per avvicinarsi ai veri wall mosaics.
+- Ogni foto viene trasformata così:
+  - il colore della cella finale diventa dominante;
+  - la foto conserva soprattutto luci/ombre e microstruttura;
+  - la colorazione non è più “soft”, ma sistematica e forte.
+- Tecnica usata nella tessera:
+  - conversione target in HSL;
+  - costruzione di tre toni (scuro / medio / chiaro) sul colore target;
+  - mappatura della luminosità della foto originale su questi tre toni;
+  - piccolissimo contributo dell’originale per mantenere il selfie leggibile;
+  - rifinitura multiply/screen.
+- Questo effetto è molto più vicino ai fotomosaici reali come quelli mostrati negli esempi allegati.
