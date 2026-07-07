@@ -335,3 +335,18 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - piccolissimo contributo dell’originale per mantenere il selfie leggibile;
   - rifinitura multiply/screen.
 - Questo effetto è molto più vicino ai fotomosaici reali come quelli mostrati negli esempi allegati.
+
+
+## Migliorie definitive fotomosaico
+
+- Aggiunta in **Admin** la sezione **Anteprima risultato finale del mosaico**:
+  - vedi prima l’immagine finale caricata;
+  - puoi generare una vera anteprima del mosaico prima di aprire lo schermo;
+  - puoi confrontare anteprima mosaico e immagine finale.
+- Migliorata la colorizzazione delle tessere:
+  - ogni tessera viene adattata in modo molto più sistematico al colore della sua cella;
+  - nelle zone bianche le tessere vengono spinte verso il bianco / grigio chiaro;
+  - nelle zone scure le tessere vengono spinte verso i toni scuri;
+  - i colori delle celle guidano davvero la costruzione della figura finale.
+- Fix incluso:
+  - corretta la funzione `applyStatusToAdmin` che si richiamava da sola.

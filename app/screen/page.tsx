@@ -298,39 +298,27 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
   const image=ctx.getImageData(0,0,size,size);
   const d=image.data;
 
-  let lumSum=0;
-  let lumSq=0;
-  let count=0;
-
+  let minLum=1, maxLum=0;
   for(let i=0;i<d.length;i+=4){
     const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
-    lumSum += lum;
-    lumSq += lum*lum;
-    count++;
+    if(lum<minLum) minLum=lum;
+    if(lum>maxLum) maxLum=lum;
   }
+  const range=Math.max(0.08, maxLum-minLum);
 
-  const mean = count ? lumSum / count : 0.5;
-  const variance = count ? Math.max(0.0005, lumSq / count - mean*mean) : 0.03;
-  const std = Math.sqrt(variance);
-
-  // Costruzione tessera in stile vero fotomosaico:
-  // il colore della cella finale domina quasi del tutto,
-  // della foto originale restano soprattutto luci/ombre e microstruttura.
+  // Vero effetto fotomosaico:
+  // il colore target domina la tessera, l'originale conserva quasi solo struttura e ombre.
   const [th, ts, tl] = rgbToHsl(target);
-
-  const darkTone  = hslToRgb(th, clamp01(ts*0.95 + 0.03), clamp01(tl*0.22 + 0.03));
+  const darkTone  = hslToRgb(th, clamp01(ts*0.95 + 0.02), clamp01(tl*0.18 + 0.02));
   const midTone   = target;
-  const lightTone = hslToRgb(th, clamp01(ts*0.55 + 0.12), clamp01(tl + (1-tl)*0.42));
-
-  const preserveOriginal = 0.06;
+  const lightTone = hslToRgb(th, clamp01(ts*0.48 + 0.10), clamp01(tl + (1-tl)*0.48));
+  const preserveOriginal = 0.03;
 
   for(let i=0;i<d.length;i+=4){
     const r=d[i], g=d[i+1], b=d[i+2];
     const lum=(0.2126*r + 0.7152*g + 0.0722*b) / 255;
-
-    // Normalizza la luminosità della foto e la mappa in modo regolare.
-    const normalized = (lum - mean) / Math.max(0.001, std);
-    const tonePos = clamp01(sigmoid(normalized * 1.18));
+    let tonePos = clamp01((lum - minLum) / range);
+    tonePos = Math.pow(tonePos, 0.92); // leggero boost nelle alte luci
 
     let mapped:Rgb;
     if(tonePos < 0.5){
@@ -339,28 +327,26 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
       mapped = mixRgb(midTone, lightTone, (tonePos - 0.5) * 2);
     }
 
-    // Piccolissimo contributo del pixel originale per non perdere del tutto il selfie.
     const nr = mapped[0] * (1 - preserveOriginal) + r * preserveOriginal;
     const ng = mapped[1] * (1 - preserveOriginal) + g * preserveOriginal;
     const nb = mapped[2] * (1 - preserveOriginal) + b * preserveOriginal;
 
-    d[i]   = clamp((nr - 128) * 1.02 + 128);
-    d[i+1] = clamp((ng - 128) * 1.02 + 128);
-    d[i+2] = clamp((nb - 128) * 1.02 + 128);
+    d[i]   = clamp((nr - 128) * 1.03 + 128);
+    d[i+1] = clamp((ng - 128) * 1.03 + 128);
+    d[i+2] = clamp((nb - 128) * 1.03 + 128);
   }
 
   ctx.putImageData(image,0,0);
 
-  // Finitura sistematica: rafforza il legame col colore target
-  // e rende il mosaico più leggibile da lontano.
+  // Finitura finale per legare ancora di più la tessera al colore della cella.
   ctx.globalCompositeOperation='multiply';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.26;
+  ctx.globalAlpha=.22;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='screen';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.18;
+  ctx.globalAlpha=.14;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='source-over';
