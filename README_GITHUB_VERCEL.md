@@ -350,3 +350,14 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - i colori delle celle guidano davvero la costruzione della figura finale.
 - Fix incluso:
   - corretta la funzione `applyStatusToAdmin` che si richiamava da sola.
+
+
+## Algoritmo fotomosaico professionale
+
+- Campionamento immagine principale su area della cella, non singolo pixel.
+- Media colore con gamma correction: sRGB → lineare → media → sRGB.
+- Matching tessere in LAB con DeltaE/CIEDE2000.
+- Preprocessing cache lato browser per colore medio, luminosità, saturazione e miniatura.
+- Tinting professionale multiply/screen con opacità controllata.
+- Ricolorazione delle tessere molto più fedele al colore della cella.
+- Admin: titolo login centrato e sezione anteprima/schermo più chiara.

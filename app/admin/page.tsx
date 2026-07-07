@@ -462,7 +462,7 @@ export default function AdminPage(){
     return <main className="container">
       {busy && <div className="adminSpinnerOverlay"><div className="adminSpinner"/><div style={{fontSize:24,fontWeight:800}}>{busyText}</div></div>}
       <section className="card">
-        <h1>Accesso Admin</h1>
+        <h1 style={{textAlign:'center'}}>Accesso Admin</h1>
         <input className="field" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password admin" onKeyDown={(e)=>{if(e.key==='Enter') login();}}/>
         <div className="spacer"/><button className="btn" onClick={login}>Accedi</button>
         {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
@@ -529,6 +529,13 @@ export default function AdminPage(){
             {targetUrl ? <img src={targetUrl} alt="Immagine finale" /> : <p>Non caricata</p>}
           </div>
         </div>}
+
+        <div className="spacer"/><h2>Anteprima veloce fotomosaico</h2>
+        <p>Per verificare rapidamente il risultato, apri lo schermo mosaico dopo aver caricato alcune foto test. Il motore ora usa campionamento area, gamma correction e LAB/CIEDE2000.</p>
+        <div className="gridBtns">
+          <Link className="btn secondary" href="/screen" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Apri anteprima / schermo mosaico</Link>
+          <Link className="btn secondary" href="/test-upload">Carica foto test</Link>
+        </div>
 
         <h2>1. Numero foto</h2>
         <div className="gridBtns">{options.map(n=><button className="btn" disabled={busy} key={n} onClick={()=>setTotal(n)}>{n} foto</button>)}</div>

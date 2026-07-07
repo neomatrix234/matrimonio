@@ -1526,3 +1526,32 @@ pre{
   border:1px solid rgba(0,0,0,.08);
   background:#f7f3ee;
 }
+
+
+/* Admin professional final fixes */
+.container .card h1{
+  text-align:center;
+}
+.adminStatus, .specialPreview, .transparencyPreview, .phoneBgPreview{
+  max-width:100%;
+}
+.mosaicPreviewWrap{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:16px;
+  margin-top:14px;
+}
+.mosaicPreviewCard{
+  background:#fff;
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:18px;
+  padding:14px;
+  box-shadow:0 10px 26px rgba(0,0,0,.08);
+}
+.mosaicPreviewCard img{
+  width:100%;
+  display:block;
+  margin-top:10px;
+  border-radius:12px;
+  border:1px solid rgba(0,0,0,.08);
+}
