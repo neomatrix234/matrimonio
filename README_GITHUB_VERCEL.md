@@ -301,3 +301,21 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Ora ogni foto viene analizzata e inserita subito nel mosaico.
 - Se le tessere sono più delle foto, le foto vengono riutilizzate in modo controllato fino al completamento.
 - Ridotto il rischio di blocco con 2000/3000 tessere.
+
+
+## Aggressive recolor + replay fast + splash PC fix
+
+- Ricolorazione delle tessere molto più aggressiva:
+  - target color dominante;
+  - conservazione ridotta della foto originale;
+  - blend multiply/screen più forte;
+  - migliore lettura dell’immagine finale anche con 600/1500/3000 tessere.
+- Testo finale aggiornato:
+  - “Grazie per aver contribuito a questo ricordo.”
+- Replay finale rapido:
+  - non ricalcola lentamente il mosaico;
+  - riusa le tessere già generate;
+  - caricamento a blocchi rapidi.
+- Splash su PC corretto:
+  - una sola area verticale 9:16 centrata;
+  - niente doppia schermata a sinistra + centro.

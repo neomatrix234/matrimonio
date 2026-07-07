@@ -250,10 +250,11 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
   const targetLum = 0.2126*target[0] + 0.7152*target[1] + 0.0722*target[2];
   const tSat = saturation(target);
 
-  // Più la zona è poco satura, più si preserva la fotografia originale.
-  const targetStrength = tSat < .10 ? .58 : tSat > .35 ? .76 : .68;
+  // Ricolorazione aggressiva per far leggere davvero la foto finale anche con poche tessere.
+  // Mantiene solo le luci/ombre principali della foto invitato.
+  const targetStrength = tSat < .10 ? .88 : tSat > .35 ? .94 : .91;
   const originalStrength = 1 - targetStrength;
-  const detailStrength = 0.88;
+  const detailStrength = 0.62;
 
   for(let i=0;i<d.length;i+=4){
     const r=d[i], g=d[i+1], b=d[i+2];
@@ -275,10 +276,10 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
     let ng = targetG*targetStrength + corrG*originalStrength;
     let nb = targetB*targetStrength + corrB*originalStrength;
 
-    // Micro contrasto e recupero dettagli.
-    nr = (nr-128)*1.08 + 128;
-    ng = (ng-128)*1.08 + 128;
-    nb = (nb-128)*1.08 + 128;
+    // Micro contrasto controllato: la tessera resta leggibile ma domina il colore target.
+    nr = (nr-128)*1.03 + 128;
+    ng = (ng-128)*1.03 + 128;
+    nb = (nb-128)*1.03 + 128;
 
     d[i]=clamp(nr);
     d[i+1]=clamp(ng);
@@ -287,13 +288,21 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
 
   ctx.putImageData(image,0,0);
 
-  // Fusione finale molto delicata. Da lontano aiuta a leggere la foto finale, da vicino mantiene la foto invitato.
-  ctx.globalCompositeOperation='soft-light';
+  // Fusione finale forte: serve per un vero wall mosaic leggibile da lontano.
+  ctx.globalCompositeOperation='multiply';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.22;
+  ctx.globalAlpha=.42;
+  ctx.fillRect(0,0,size,size);
+
+  ctx.globalCompositeOperation='screen';
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.globalAlpha=.30;
   ctx.fillRect(0,0,size,size);
 
   ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=.18;
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
 
   return canvas.toDataURL('image/jpeg', .84);
@@ -514,6 +523,30 @@ export default function ScreenPage(){
     setFinal(false);
     setCompleteMsg(false);
     setReplayStarted(true);
+
+    // Replay veloce: non ricalcola tutto lentamente.
+    // Usa le tessere già generate e le rimette a schermo a blocchi rapidi.
+    const snapshot = tiles.slice().sort((a,b)=>a.order-b.order);
+    if(snapshot.length){
+      usedIndexes.current=new Set();
+      setTiles([]);
+
+      const chunk = total > 2000 ? 120 : total > 1200 ? 90 : 60;
+      for(let i=0;i<snapshot.length;i+=chunk){
+        if(runId!==currentRun.current || paused) return;
+        const part=snapshot.slice(0, Math.min(snapshot.length, i+chunk));
+        part.forEach(t=>usedIndexes.current.add(t.index));
+        setTiles(part);
+        await new Promise(res=>setTimeout(res,18));
+      }
+
+      if(runId===currentRun.current && !paused){
+        setTimeout(()=>setFinal(true), 450);
+      }
+      return;
+    }
+
+    // Fallback: se non ci sono tessere già pronte, costruisce comunque il mosaico.
     usedIndexes.current=new Set();
     resetPhotoUseCounts();
     setTiles([]);
@@ -529,7 +562,7 @@ export default function ScreenPage(){
 
     await buildWallMosaic((s.photos || []),total,runId,false);
     if(runId===currentRun.current && !paused){
-      setTimeout(()=>setFinal(true), 1200);
+      setTimeout(()=>setFinal(true), 450);
     }
   }
 
@@ -614,7 +647,7 @@ export default function ScreenPage(){
         zIndex:6,
         padding:'0 20px'
       }}>
-        Grazie per aver costruito con noi questo ricordo.
+        Grazie per aver contribuito a questo ricordo.
       </div>}
 
       {!isFullscreen && <div className="screenBottomControls">

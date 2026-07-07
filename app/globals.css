@@ -1448,3 +1448,57 @@ pre{
     background-size:cover !important;
   }
 }
+/* FIX PC splash single centered phone canvas */
+@media (min-width:721px){
+  .splashCompose{
+    position:fixed !important;
+    inset:0 !important;
+    z-index:300 !important;
+    overflow:hidden !important;
+    background:#fffdf9 !important;
+  }
+
+  .splashCompose .splashWhiteGlow,
+  .splashCompose .splashLayer,
+  .splashCompose::before{
+    position:absolute !important;
+    inset:auto !important;
+    left:50% !important;
+    top:50% !important;
+    width:min(100vw, calc(100vh * 9 / 16)) !important;
+    height:min(100vh, calc(100vw * 16 / 9)) !important;
+    transform:translate(-50%,-50%) !important;
+    background-size:cover !important;
+    background-position:center !important;
+    background-repeat:no-repeat !important;
+  }
+
+  .splashCompose::after{
+    position:absolute !important;
+    inset:0 !important;
+    left:0 !important;
+    top:0 !important;
+    width:100vw !important;
+    height:100vh !important;
+  }
+
+  .splashTodayButton{
+    z-index:5 !important;
+    left:50% !important;
+    top:49.5% !important;
+    width:clamp(128px, 20vh, 214px) !important;
+    height:clamp(40px, 5.4vh, 56px) !important;
+  }
+
+  .uploadFull.uploaderActive{
+    background-size:auto 100% !important;
+    background-position:center !important;
+    background-repeat:no-repeat !important;
+  }
+}
+
+/* Ricolorazione più aggressiva: le tessere sono già canvas, nessun filtro soft sopra */
+.tileButton img{
+  filter:none !important;
+  animation-duration:.22s !important;
+}
