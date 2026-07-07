@@ -707,6 +707,10 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
+          {targetUrl && count>0 && !final && <img className="mosaicSoftReferenceOverlay" src={targetUrl} alt="" style={{
+            position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
+            opacity:.30, mixBlendMode:'normal', pointerEvents:'none', zIndex:2
+          }}/>}
           {targetUrl && <img src={targetUrl} alt="" style={{
             position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
             opacity:final?1:0,transition:'opacity 3s ease',zIndex:3

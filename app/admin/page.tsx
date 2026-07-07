@@ -18,6 +18,51 @@ function readOriginalFile(file: File): Promise<{base64:string;previewUrl:string;
 }
 function kb(size:number){ if(!size) return '0 KB'; if(size<1024*1024) return `${Math.round(size/1024)} KB`; return `${(size/(1024*1024)).toFixed(1)} MB`; }
 
+function qClamp(v:number,min=0,max=255){ return Math.max(min, Math.min(max, v)); }
+function qSrgbToLinear(v:number){ const x=v/255; return x<=0.04045?x/12.92:Math.pow((x+0.055)/1.055,2.4); }
+function qLinearToSrgb(v:number){ const x=Math.max(0,Math.min(1,v)); const s=x<=0.0031308?12.92*x:1.055*Math.pow(x,1/2.4)-0.055; return qClamp(Math.round(s*255)); }
+function qLum(c:number[]){ return 0.2126*qSrgbToLinear(c[0])+0.7152*qSrgbToLinear(c[1])+0.0722*qSrgbToLinear(c[2]); }
+function qLoadImg(url:string): Promise<HTMLImageElement>{ return new Promise((resolve,reject)=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=reject; img.src=url; }); }
+function qMix(a:number,b:number,t:number){ return a+(b-a)*t; }
+function qMixRgb(a:number[],b:number[],t:number){ return [Math.round(qMix(a[0],b[0],t)),Math.round(qMix(a[1],b[1],t)),Math.round(qMix(a[2],b[2],t))]; }
+function qGrid(total:number){
+  // anteprima rapida: meno tessere del definitivo, ma proporzione leggibile
+  if(total <= 600) return {cols:30, rows:20};
+  if(total <= 1200) return {cols:34, rows:24};
+  if(total <= 2000) return {cols:40, rows:28};
+  return {cols:45, rows:30};
+}
+async function qAvgPhoto(url:string){
+  const img=await qLoadImg(url); const s=16; const c=document.createElement('canvas'); c.width=s; c.height=s; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return [128,128,128];
+  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, side=Math.min(iw,ih), sx=Math.max(0,(iw-side)/2), sy=Math.max(0,(ih-side)/2);
+  ctx.drawImage(img,sx,sy,side,side,0,0,s,s); const d=ctx.getImageData(0,0,s,s).data; let r=0,g=0,b=0,n=0;
+  for(let i=0;i<d.length;i+=4){ r+=qSrgbToLinear(d[i]); g+=qSrgbToLinear(d[i+1]); b+=qSrgbToLinear(d[i+2]); n++; }
+  return [qLinearToSrgb(r/n),qLinearToSrgb(g/n),qLinearToSrgb(b/n)];
+}
+async function qTargetColors(url:string, cols:number, rows:number){
+  const img=await qLoadImg(url); const factor=4; const w=cols*factor,h=rows*factor; const c=document.createElement('canvas'); c.width=w;c.height=h; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return [];
+  ctx.drawImage(img,0,0,w,h); const d=ctx.getImageData(0,0,w,h).data; const out:any[]=[];
+  for(let cy=0;cy<rows;cy++){ for(let cx=0;cx<cols;cx++){ let r=0,g=0,b=0,n=0; for(let yy=0;yy<factor;yy++){ for(let xx=0;xx<factor;xx++){ const p=((cy*factor+yy)*w+(cx*factor+xx))*4; r+=qSrgbToLinear(d[p]); g+=qSrgbToLinear(d[p+1]); b+=qSrgbToLinear(d[p+2]); n++; }} out.push([qLinearToSrgb(r/n),qLinearToSrgb(g/n),qLinearToSrgb(b/n)]); }}
+  return out;
+}
+function qDist(a:number[],b:number[]){ return (a[0]-b[0])**2*.30+(a[1]-b[1])**2*.58+(a[2]-b[2])**2*.22+(qLum(a)*255-qLum(b)*255)**2*.65; }
+async function qTile(url:string,target:number[],tileSize:number){
+  const img=await qLoadImg(url); const c=document.createElement('canvas'); c.width=tileSize;c.height=tileSize; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return c;
+  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, side=Math.min(iw,ih), sx=Math.max(0,(iw-side)/2), sy=Math.max(0,(ih-side)/2);
+  ctx.drawImage(img,sx,sy,side,side,0,0,tileSize,tileSize); const im=ctx.getImageData(0,0,tileSize,tileSize); const d=im.data; let min=1,max=0;
+  for(let i=0;i<d.length;i+=4){ const l=qLum([d[i],d[i+1],d[i+2]]); if(l<min)min=l;if(l>max)max=l; }
+  const range=Math.max(.08,max-min);
+  const light=[qClamp(target[0]+(255-target[0])*.62),qClamp(target[1]+(255-target[1])*.62),qClamp(target[2]+(255-target[2])*.62)];
+  const dark=[target[0]*.12,target[1]*.12,target[2]*.12];
+  for(let i=0;i<d.length;i+=4){
+    let t=(qLum([d[i],d[i+1],d[i+2]])-min)/range; t=Math.max(0,Math.min(1,Math.pow(t,.88)));
+    const m=t<.5?qMixRgb(dark,target,t*2):qMixRgb(target,light,(t-.5)*2);
+    d[i]=qClamp(m[0]*.985+d[i]*.015); d[i+1]=qClamp(m[1]*.985+d[i+1]*.015); d[i+2]=qClamp(m[2]*.985+d[i+2]*.015);
+  }
+  ctx.putImageData(im,0,0); return c;
+}
+
+
 
 type PreviewPhoto = { id:string; name:string; created:number; size:number };
 type Rgb = [number,number,number];
@@ -34,6 +79,15 @@ function gridForTotal(total:number){
   if(total <= 2000) return {cols:50, rows:40};
   if(total <= 2500) return {cols:50, rows:50};
   return {cols:60, rows:50};
+}
+// Griglia che rispetta le proporzioni reali della foto finale, invece di forzare
+// sempre un rettangolo 3:2. Senza questo la foto viene stirata/schiacciata e la
+// composizione risulta irriconoscibile, indipendentemente dal numero di tessere.
+function gridForTotalAspect(total:number, aspect:number){
+  const a = (aspect && isFinite(aspect) && aspect>0) ? aspect : 1.5;
+  let cols = Math.max(6, Math.round(Math.sqrt(total*a)));
+  let rows = Math.max(6, Math.round(total/cols));
+  return {cols, rows};
 }
 function clamp(v:number,min=0,max=255){ return Math.max(min, Math.min(max, v)); }
 function clamp01(v:number){ return Math.max(0, Math.min(1, v)); }
@@ -131,8 +185,8 @@ async function previewPhotoFeature(url:string, id:string): Promise<PreviewFeatur
   const avg:Rgb=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];
   return {id,url,avg,lab:rgbToLab(avg),lum:luminance(avg),sat:saturation(avg),useCount:0};
 }
-async function previewTargetCells(url:string, cols:number, rows:number): Promise<PreviewCell[]>{
-  const img=await loadImg(url);
+async function previewTargetCells(url:string, cols:number, rows:number, preloaded?:HTMLImageElement): Promise<PreviewCell[]>{
+  const img=preloaded || await loadImg(url);
   const canvas=document.createElement('canvas');
   canvas.width=cols; canvas.height=rows;
   const ctx=canvas.getContext('2d', { willReadFrequently:true });
@@ -195,13 +249,11 @@ async function createPreviewMosaicTile(url:string, target:Rgb, size:number): Pro
     d[i+2]=clamp((nb-128)*1.03+128);
   }
   ctx.putImageData(image,0,0);
+  // Una sola passata leggera di tinta (non piu' multiply+screen sommati, che
+  // appiattivano le foto in macchie di colore uniforme e "sporcavano" i toni).
   ctx.globalCompositeOperation='multiply';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.22;
-  ctx.fillRect(0,0,size,size);
-  ctx.globalCompositeOperation='screen';
-  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.14;
+  ctx.globalAlpha=.08;
   ctx.fillRect(0,0,size,size);
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=1;
@@ -234,6 +286,9 @@ export default function AdminPage(){
   const [bgPosX,setBgPosX]=useState(50);
   const [bgPosY,setBgPosY]=useState(50);
   const [bgScale,setBgScale]=useState(100);
+  const [previewFastUrl,setPreviewFastUrl]=useState('');
+  const [previewText,setPreviewText]=useState('');
+  const [previewRunning,setPreviewRunning]=useState(false);
   const [previewBusy,setPreviewBusy]=useState(false);
   const [previewProgress,setPreviewProgress]=useState('');
   const [previewUrl,setPreviewUrl]=useState('');
@@ -380,6 +435,70 @@ export default function AdminPage(){
   async function clearTarget(){ if(!confirm('Cancellare la foto finale?'))return; setBusyText('Cancello foto finale...'); try{await adminAction('clearTarget');showAdminMsg('Foto finale cancellata.');}catch{} }
   async function clearBackground(){ if(!confirm('Cancellare lo sfondo?'))return; setBusyText('Cancello sfondo...'); try{await adminAction('clearBackground');showAdminMsg('Sfondo cancellato.');}catch{} }
 
+  async function buildQuickPreview(){
+    setErr('');
+    setPreviewRunning(true);
+    setPreviewFastUrl('');
+    try{
+      if(!data?.targetFileId) throw new Error('Carica prima la foto finale.');
+      const photos=(data?.photos||[]).slice();
+      if(!photos.length) throw new Error('Carica prima alcune foto invitati o usa Upload test.');
+      const total=Number(data?.totalTiles||600);
+      const targetUrlLocal=`/api/image?id=${data.targetFileId}&v=${data?.target?.updated||Date.now()}`;
+      const targetImgQ = await qLoadImg(targetUrlLocal);
+      const aspectQ = (targetImgQ.naturalWidth||targetImgQ.width) / (targetImgQ.naturalHeight||targetImgQ.height);
+      const {cols,rows}=gridForTotalAspect(total, aspectQ);
+      const tileSize=12;
+      const canvas=document.createElement('canvas');
+      canvas.width=cols*tileSize; canvas.height=rows*tileSize;
+      const ctx=canvas.getContext('2d');
+      if(!ctx) throw new Error('Canvas non disponibile.');
+      ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      setPreviewText('Campiono immagine principale...');
+      const targetColors=await qTargetColors(targetUrlLocal,cols,rows);
+
+      setPreviewText('Analizzo miniature foto...');
+      const maxPhotos=Math.min(photos.length, 260);
+      const features:any[]=[];
+      for(let i=0;i<maxPhotos;i++){
+        const p=photos[i]; const url=`/api/image?id=${p.id}`;
+        try{ features.push({id:p.id,url,avg:await qAvgPhoto(url),use:0}); }catch{}
+        if(i%12===0) await new Promise(r=>setTimeout(r,0));
+      }
+      if(!features.length) throw new Error('Non riesco ad analizzare le foto.');
+
+      setPreviewText('Creo anteprima veloce...');
+      for(let i=0;i<targetColors.length;i++){
+        const target=targetColors[i];
+        let best=features[0], bestScore=Number.POSITIVE_INFINITY;
+        for(const f of features){
+          const score=qDist(f.avg,target)+f.use*f.use*140;
+          if(score<bestScore){bestScore=score;best=f;}
+        }
+        best.use++;
+        const tile=await qTile(best.url,target,tileSize);
+        ctx.drawImage(tile,(i%cols)*tileSize,Math.floor(i/cols)*tileSize,tileSize,tileSize);
+        if(i%32===0){ setPreviewFastUrl(canvas.toDataURL('image/jpeg',.82)); await new Promise(r=>setTimeout(r,0)); }
+      }
+
+      // Overlay leggero della foto finale: tecnica usata nei wall mosaic reali per leggere bene la figura da lontano.
+      const targetImg=await qLoadImg(targetUrlLocal);
+      ctx.globalCompositeOperation='source-over';
+      ctx.globalAlpha=.34;
+      ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
+      ctx.globalAlpha=1;
+
+      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.9));
+      setPreviewText(`Anteprima pronta: ${cols*rows} tessere ridotte. Uso definitivo: ${data.totalTiles} tessere.`);
+      showAdminMsg('Anteprima veloce pronta.');
+    }catch(e:any){
+      setErr(e?.message || 'Errore anteprima');
+    }finally{
+      setPreviewRunning(false);
+    }
+  }
+
   async function buildAdminPreview(){
     setErr('');
     setPreviewBusy(true);
@@ -389,11 +508,15 @@ export default function AdminPage(){
       const photos:PreviewPhoto[] = (data?.photos || []).slice();
       if(!photos.length) throw new Error('Non ci sono ancora foto invitati caricate.');
       const total = Number(data?.totalTiles || 600);
-      const {cols,rows} = gridForTotal(total);
-      const cellSize = total >= 2500 ? 10 : total >= 1500 ? 11 : total >= 1000 ? 12 : 14;
+      const cellSize = total >= 2500 ? 10 : total >= 1500 ? 11 : total >= 1000 ? 12 : 16;
 
       const targetUrlLocal = `/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`;
-      const cells = await previewTargetCells(targetUrlLocal, cols, rows);
+      const targetImgEl = await loadImg(targetUrlLocal);
+      const targetAspect = (targetImgEl.naturalWidth||targetImgEl.width) / (targetImgEl.naturalHeight||targetImgEl.height);
+      // La griglia segue le proporzioni reali della foto finale: prima veniva
+      // forzato un rettangolo fisso e la foto risultava stirata/irriconoscibile.
+      const {cols,rows} = gridForTotalAspect(total, targetAspect);
+      const cells = await previewTargetCells(targetUrlLocal, cols, rows, targetImgEl);
       const sortedCells = cells.slice().sort((a,b)=>b.importance-a.importance);
 
       const canvas=document.createElement('canvas');
@@ -418,6 +541,21 @@ export default function AdminPage(){
 
       const maxReuse = Math.max(1, Math.ceil(total / Math.max(1, features.length)));
       const used = new Set<number>();
+      // Tiene traccia di quale foto e' stata messa in ogni cella, per evitare
+      // di ripetere la stessa foto in celle adiacenti: e' questo che creava
+      // le grosse "macchie" piatte invece di una texture a mosaico.
+      const placedAt:(PreviewFeature|null)[] = new Array(cols*rows).fill(null);
+      const neighborPenalty = (idx:number, f:PreviewFeature)=>{
+        let p = 0;
+        const x = idx % cols, y = Math.floor(idx/cols);
+        const check=(nx:number,ny:number)=>{
+          if(nx<0||ny<0||nx>=cols||ny>=rows) return;
+          const n = placedAt[ny*cols+nx];
+          if(n && n.id===f.id) p += 260000;
+        };
+        check(x-1,y); check(x+1,y); check(x,y-1); check(x,y+1);
+        return p;
+      };
 
       for(let i=0;i<sortedCells.length;i++){
         const cell = sortedCells[i];
@@ -425,7 +563,7 @@ export default function AdminPage(){
         let bestScore=Number.POSITIVE_INFINITY;
 
         for(const f of features){
-          const score = previewPhotoCellScore(f, cell, maxReuse);
+          const score = previewPhotoCellScore(f, cell, maxReuse) + neighborPenalty(cell.index, f);
           if(score < bestScore){
             bestScore = score;
             best = f;
@@ -434,6 +572,7 @@ export default function AdminPage(){
         if(!best) continue;
 
         best.useCount += 1;
+        placedAt[cell.index] = best;
         const tileCanvas = await createPreviewMosaicTile(best.url, cell.color, cellSize);
         const x = (cell.index % cols) * cellSize;
         const y = Math.floor(cell.index / cols) * cellSize;
@@ -539,19 +678,7 @@ export default function AdminPage(){
 
         <h2>1. Numero foto</h2>
         <div className="gridBtns">{options.map(n=><button className="btn" disabled={busy} key={n} onClick={()=>setTotal(n)}>{n} foto</button>)}</div>
-
-        <div className="spacer"/><h2>2. Trasparenza box e sfondo</h2>
-        <p>Le modifiche sono applicate subito, senza finestra di conferma.</p>
-        <label><b>Trasparenza box</b></label>
-        <input className="field" type="range" min="0.02" max="0.95" step="0.01" value={opacity} onChange={e=>setOpacity(Number(e.target.value))}/>
-        <label><b>Oscuramento immagine sfondo</b></label>
-        <input className="field" type="range" min="0" max="0.85" step="0.01" value={bgDark} onChange={e=>setBackgroundDarkness(Number(e.target.value))}/>
-        <div className="transparencyPreview" style={{backgroundImage:bgUrl?`url(${bgUrl})`:'linear-gradient(135deg,#6d5b4b,#201a16)', position:'relative'}}>
-          <div className="bgDim" style={{opacity:bgDark}} />
-          <div className="transparencyBox" style={{background:`rgba(255,255,255,${opacity})`, position:'relative', zIndex:2}}>Esempio box</div>
-        </div>
-
-        <div className="spacer"/><h2>3. Foto finale da riprodurre</h2>
+        <div className="spacer"/><h2>2. Foto finale da riprodurre</h2>
         <p>Salvata come <b>__TARGET_MOSAICO.jpg</b> in dimensione originale.</p>
         <input className="field" type="file" accept="image/*" onChange={onTargetChange}/>
         {targetPreview&&<img className="preview" src={targetPreview} alt="Foto finale" style={{display:'block'}}/>}
@@ -559,50 +686,19 @@ export default function AdminPage(){
         <div className="spacer"/><button className="btn" disabled={busy||!targetBase64} onClick={uploadTarget}>Carica foto finale</button>
         <div className="spacer"/><button className="btn danger" disabled={busy||!data?.hasTarget} onClick={clearTarget}>Cancella foto finale</button>
 
-        <div className="spacer"/><h2>4. Sfondo home/upload</h2>
+        <div className="spacer"/><h2>3. Sfondo home/upload</h2>
         <p>Salvato come <b>__UPLOAD_BACKGROUND.jpg</b> in dimensione originale.</p>
         <input className="field" type="file" accept="image/*" onChange={onBgChange}/>
         {bgPreview&&<img className="preview" src={bgPreview} alt="Sfondo" style={{display:'block'}}/>}
         {bgInfo&&<div className="ok">{bgInfo}</div>}
         <div className="spacer"/><button className="btn" disabled={busy||!bgBase64} onClick={uploadBackground}>Aggiorna sfondo</button>
         <div className="spacer"/><button className="btn danger" disabled={busy||!data?.hasUploadBackground} onClick={clearBackground}>Cancella sfondo</button>
-
-        <div className="spacer"/><h2>5. Adatta sfondo su smartphone</h2>
-        <p>Qui vedi l’anteprima verticale come su telefono. Se lo sfondo è troppo grande, usa “Contieni” o regola la scala manuale.</p>
-        <div className="gridBtns">
-          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'contain'})}>Contieni</button>
-          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'cover'})}>Riempi</button>
-          <button className="btn secondary" onClick={()=>saveBackgroundLayout({fit:'manual'})}>Manuale</button>
-        </div>
-        <div className="spacer"/>
-        <label><b>Posizione orizzontale</b></label>
-        <input className="field" type="range" min="0" max="100" step="1" value={bgPosX} onChange={e=>saveBackgroundLayout({posX:Number(e.target.value), fit:bgFit})}/>
-        <label><b>Posizione verticale</b></label>
-        <input className="field" type="range" min="0" max="100" step="1" value={bgPosY} onChange={e=>saveBackgroundLayout({posY:Number(e.target.value), fit:bgFit})}/>
-        <label><b>Scala manuale</b></label>
-        <input className="field" type="range" min="30" max="260" step="1" value={bgScale} onChange={e=>saveBackgroundLayout({scale:Number(e.target.value), fit:'manual'})}/>
-        <div className="phoneBgPreview" style={{backgroundImage:bgUrl?`url(${bgUrl})`:'linear-gradient(135deg,#6d5b4b,#201a16)', backgroundSize:previewBgSize, backgroundPosition:previewBgPosition}}>
-          <div className="bgDim" style={{opacity:bgDark}} />
-          <div className="phoneBgPreviewBox" style={{background:`rgba(255,255,255,${opacity})`}}>Carica foto</div>
-        </div>
-
-        <div className="spacer"/><h2>6. Test e schermo</h2>
+        <div className="spacer"/><h2>4. Test e schermo</h2>
         <Link className="btn secondary" href="/test-upload">Upload multiplo per test</Link>
         <div className="spacer"/><Link className="btn secondary" href="/screen">Apri schermo mosaico</Link>
         <div className="spacer"/><button className="btn secondary" onClick={()=>load()}>Aggiorna stato</button>
         <div className="spacer"/><button className="btn danger" disabled={busy} onClick={clearGuestPhotos}>Reset mosaico: cancella solo foto invitati</button>
-
-        <div className="spacer"/><h2>7. Testi splash screen</h2>
-        <p>Questi testi appaiono per 5 secondi prima della pagina di caricamento.</p>
-        <input className="field" value={splashLine1} onChange={e=>setSplashLine1(e.target.value)} placeholder="Prima riga"/>
-        <div className="spacer"/>
-        <input className="field" value={splashLine2} onChange={e=>setSplashLine2(e.target.value)} placeholder="Seconda riga"/>
-        <div className="spacer"/>
-        <input className="field" value={splashLine3} onChange={e=>setSplashLine3(e.target.value)} placeholder="Terza riga"/>
-        <div className="spacer"/>
-        <button className="btn" disabled={busy} onClick={saveSplashText}>Salva testi splash</button>
-
-        <div className="spacer"/><h2>8. Cambia password Admin</h2>
+        <div className="spacer"/><h2>5. Cambia password Admin</h2>
         <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin" onKeyDown={(e)=>{if(e.key==='Enter' && newPassword.length>=6) changePassword();}}/>
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
 

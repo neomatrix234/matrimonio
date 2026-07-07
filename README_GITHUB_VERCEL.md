@@ -368,3 +368,17 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
 - Corretto errore TypeScript:
   - `Property 'tileCanvasSize' does not exist`
 - Aggiunta la proprietà `tileCanvasSize: 190` dentro `PROFESSIONAL_MOSAIC`.
+
+
+## Admin semplificato + anteprima migliorata
+
+- Rimossi dalla pagina Admin:
+  - punto 2: Trasparenza box e sfondo;
+  - punto 5: Adatta sfondo su smartphone;
+  - punto 7: Testi splash screen.
+- Migliorata anteprima veloce:
+  - usa risoluzione ridotta;
+  - usa meno foto per non aspettare troppo Drive;
+  - applica ricolorazione aggressiva per ogni tessera;
+  - aggiunge leggero overlay dell’immagine finale, tecnica comune nei wall mosaic reali.
+- Anche lo schermo mosaico usa un overlay leggero della foto finale mentre il mosaico si costruisce, per migliorare la fedeltà visiva da lontano.
