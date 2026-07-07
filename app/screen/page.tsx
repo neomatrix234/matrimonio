@@ -91,15 +91,38 @@ function deltaE2000(lab1:Lab, lab2:Lab){
 }
 
 
-function gridForTotal(total:number){
-  if(total <= 600) return {cols:30, rows:20};
-  if(total <= 800) return {cols:40, rows:20};
-  if(total <= 1000) return {cols:40, rows:25};
-  if(total <= 1200) return {cols:40, rows:30};
-  if(total <= 1500) return {cols:50, rows:30};
-  if(total <= 2000) return {cols:50, rows:40};
-  if(total <= 2500) return {cols:50, rows:50};
-  return {cols:60, rows:50};
+function gridForTotal(total:number, aspect:number=1.5){
+  const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
+  let bestCols = total;
+  let bestRows = 1;
+  let bestError = Number.POSITIVE_INFINITY;
+
+  for(let rows=1; rows<=Math.sqrt(total)+1; rows++){
+    if(total % rows !== 0) continue;
+    const cols = total / rows;
+    const ratio = cols / rows;
+    const error = Math.abs(ratio - safeAspect);
+    if(error < bestError){
+      bestError = error;
+      bestCols = cols;
+      bestRows = rows;
+    }
+  }
+
+  if(bestCols < bestRows){
+    const t = bestCols;
+    bestCols = bestRows;
+    bestRows = t;
+  }
+
+  return { cols: bestCols, rows: bestRows };
+}
+
+async function getImageAspect(url:string): Promise<number>{
+  const img = await loadImg(url);
+  const w = img.naturalWidth || img.width || 1;
+  const h = img.naturalHeight || img.height || 1;
+  return w / h;
 }
 
 function clamp(v:number,min=0,max=255){
@@ -168,6 +191,25 @@ function mixRgb(a:Rgb,b:Rgb,t:number): Rgb{
     Math.round(mix(a[1],b[1],t)),
     Math.round(mix(a[2],b[2],t))
   ];
+}
+
+
+function adaptiveSquareCrop(iw:number, ih:number, xNorm:number=0.5, yNorm:number=0.5){
+  const side = Math.min(iw, ih);
+  let sx = 0;
+  let sy = 0;
+
+  if(iw > ih){
+    const freeX = iw - side;
+    sx = Math.round(freeX * Math.max(0, Math.min(1, xNorm)));
+  }else if(ih > iw){
+    const freeY = ih - side;
+    sy = Math.round(freeY * Math.max(0, Math.min(1, yNorm)));
+  }
+
+  sx = Math.max(0, Math.min(iw - side, sx));
+  sy = Math.max(0, Math.min(ih - side, sy));
+  return { side, sx, sy };
 }
 
 function clamp01(v:number){
@@ -330,7 +372,7 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
   });
 }
 
-async function createMosaicTile(url:string, target:Rgb): Promise<string>{
+async function createMosaicTile(url:string, target:Rgb, xNorm:number=0.5, yNorm:number=0.5): Promise<string>{
   const img=await loadImg(url);
   const size=PROFESSIONAL_MOSAIC.tileCanvasSize || 190;
   const canvas=document.createElement('canvas');
@@ -341,10 +383,8 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
-  const side=Math.min(iw,ih);
-  const sx=Math.max(0,Math.floor((iw-side)/2));
-  const sy=Math.max(0,Math.floor((ih-side)/2));
-  ctx.drawImage(img,sx,sy,side,side,0,0,size,size);
+  const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
+  ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
   const image=ctx.getImageData(0,0,size,size);
   const d=image.data;
@@ -375,17 +415,11 @@ async function createMosaicTile(url:string, target:Rgb): Promise<string>{
 
   ctx.putImageData(image,0,0);
 
-  // Tinting professionale regolabile: multiply + screen, 20–40%.
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=PROFESSIONAL_MOSAIC.tintOpacity;
-  ctx.fillRect(0,0,size,size);
-
-  ctx.globalCompositeOperation='screen';
-  ctx.globalAlpha=PROFESSIONAL_MOSAIC.tintOpacity*0.42;
-  ctx.fillRect(0,0,size,size);
-
+  // Leggera velatura finale locale al mosaico: non modifica mai il file originale su Drive.
   ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.globalAlpha=0.14;
+  ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
 
   return canvas.toDataURL('image/jpeg', .86);
@@ -400,11 +434,14 @@ export default function ScreenPage(){
   const [replayStarted,setReplayStarted]=useState(false);
   const [paused,setPaused]=useState(false);
   const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
+  const [targetAspect,setTargetAspect]=useState(1.5);
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
   const targetCellsRef=useRef<TargetCell[]>([]);
   const photoFeatureCache=useRef<Map<string,PhotoFeature>>(new Map());
+  const assignedPhotoByIndex=useRef<Map<number,string>>(new Map());
+  const targetAspectRef=useRef(1.5);
   const currentRun=useRef(0);
 
   function targetImageUrl(s:any){
@@ -424,6 +461,32 @@ export default function ScreenPage(){
 
   function resetPhotoUseCounts(){
     photoFeatureCache.current.forEach(f=>{ f.useCount=0; });
+    assignedPhotoByIndex.current = new Map();
+  }
+
+  function neighborDuplicatePenalty(photoId:string, cellIndex:number, cols:number, rows:number){
+    let penalty = 0;
+    const x = cellIndex % cols;
+    const y = Math.floor(cellIndex / cols);
+
+    for(let dy=-2; dy<=2; dy++){
+      for(let dx=-2; dx<=2; dx++){
+        if(dx===0 && dy===0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if(nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+        const nIndex = ny * cols + nx;
+        const assigned = assignedPhotoByIndex.current.get(nIndex);
+        if(!assigned) continue;
+        if(assigned === photoId){
+          const dist = Math.abs(dx) + Math.abs(dy);
+          if(dist <= 1) penalty += 90000;
+          else if(dist === 2) penalty += 24000;
+          else penalty += 9000;
+        }
+      }
+    }
+    return penalty;
   }
 
   async function buildWallMosaic(photos:Photo[], total:number, runId:number, appendOnly:boolean){
@@ -433,6 +496,7 @@ export default function ScreenPage(){
     if(!realPhotos.length) return;
 
     const maxReuse = Math.max(1, Math.ceil(total / realPhotos.length));
+    const { cols, rows } = gridForTotal(total, targetAspectRef.current);
 
     if(!appendOnly && usedIndexes.current.size === 0){
       resetPhotoUseCounts();
@@ -463,7 +527,7 @@ export default function ScreenPage(){
       let checked=0;
       for(const cell of cellsByImportance){
         if(usedIndexes.current.has(cell.index)) continue;
-        const score=photoCellScore(feature,cell,maxReuse);
+        const score=photoCellScore(feature,cell,maxReuse) + neighborDuplicatePenalty(feature.id, cell.index, cols, rows);
         if(score<bestScore){
           bestScore=score;
           bestCell=cell;
@@ -483,10 +547,13 @@ export default function ScreenPage(){
       feature.useCount += 1;
       let modifiedUrl=feature.url;
       try{
-        modifiedUrl=await createMosaicTile(feature.url, bestCell.color);
+        const xNorm = cols <= 1 ? 0.5 : (bestCell.index % cols) / (cols - 1);
+        const yNorm = rows <= 1 ? 0.5 : Math.floor(bestCell.index / cols) / (rows - 1);
+        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, xNorm, yNorm);
       }catch(e){}
 
       usedIndexes.current.add(bestCell.index);
+      assignedPhotoByIndex.current.set(bestCell.index, feature.id);
 
       setTiles(prev=>{
         // evita doppioni sulla stessa cella se due cicli si sovrappongono
@@ -555,10 +622,14 @@ export default function ScreenPage(){
       setStatus(s);
 
       const total=s.totalTiles || 600;
-      const {cols,rows}=gridForTotal(total);
-
-      if(s.targetFileId && targetCellsRef.current.length !== (cols*rows)){
-        targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
+      if(s.targetFileId){
+        const aspect = await getImageAspect(targetImageUrl(s));
+        targetAspectRef.current = aspect;
+        setTargetAspect(aspect);
+        const {cols,rows}=gridForTotal(total, aspect);
+        if(targetCellsRef.current.length !== (cols*rows)){
+          targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
+        }
       }
 
       if(!processing.current && targetCellsRef.current.length && !replayStarted){
@@ -593,6 +664,7 @@ export default function ScreenPage(){
     setFinal(false);
     setCompleteMsg(false);
     usedIndexes.current=new Set();
+    assignedPhotoByIndex.current=new Map();
     targetCellsRef.current=[];
     resetPhotoUseCounts();
     setTiles([]);
@@ -612,6 +684,7 @@ export default function ScreenPage(){
     const snapshot = tiles.slice().sort((a,b)=>a.order-b.order);
     if(snapshot.length){
       usedIndexes.current=new Set();
+      assignedPhotoByIndex.current=new Map();
       setTiles([]);
 
       const chunk = total > 2000 ? 120 : total > 1200 ? 90 : 60;
@@ -638,7 +711,7 @@ export default function ScreenPage(){
     const s=await r.json();
     setStatus(s);
 
-    const {cols,rows}=gridForTotal(total);
+    const {cols,rows}=gridForTotal(total, targetAspect);
     if(s.targetFileId){
       targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
     }
@@ -661,7 +734,7 @@ export default function ScreenPage(){
   },[replayStarted,final,paused]);
 
   const total=status?.totalTiles || 600;
-  const {cols,rows}=gridForTotal(total);
+  const {cols,rows}=gridForTotal(total, targetAspect);
   const cells=Array.from({length:total});
   const tileMap=new Map<number,Tile>();
   tiles.forEach(t=>tileMap.set(t.index,t));
@@ -678,7 +751,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore professionale LAB/CIEDE2000 attivo' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore professionale LAB/CIEDE2000 attivo · per i test completa il mosaico anche con poche foto riusando le tessere disponibili' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>

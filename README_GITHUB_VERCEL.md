@@ -382,3 +382,36 @@ Corretto secondo errore TypeScript in `/app/screen/page.tsx`: nel popup tessera 
   - applica ricolorazione aggressiva per ogni tessera;
   - aggiunge leggero overlay dell’immagine finale, tecnica comune nei wall mosaic reali.
 - Anche lo schermo mosaico usa un overlay leggero della foto finale mentre il mosaico si costruisce, per migliorare la fedeltà visiva da lontano.
+
+
+## Fix strutturali mosaico
+
+- La griglia del mosaico non è più fissa:
+  - ora viene adattata automaticamente al rapporto reale della foto finale.
+- Corretto il bug di deformazione/schiacciamento dell’immagine finale.
+- Ricolorazione tessere più pulita:
+  - eliminata la doppia colorazione multiply+screen troppo sporca;
+  - mantenuta una sola velatura leggera.
+- Anti-duplicati di vicinanza:
+  - forte penalità se la stessa foto finisce troppo vicina a sé stessa.
+- Anche l’anteprima Admin usa ora il rapporto reale dell’immagine finale.
+
+
+## Ritaglio obbligatorio prima dell'invio
+
+- Nella pagina di caricamento utente la foto va ora sempre ritagliata prima dell'invio.
+- Il ritaglio è manuale: l'utente può spostare e zoomare la foto dentro una cornice quadrata.
+- Vale per foto scattate al momento e per foto scelte da libreria/cartelle.
+- Solo dopo la conferma del ritaglio compare il pulsante **Invia foto**.
+
+
+## Test con poche foto + ritaglio locale dinamico
+
+- Il test del fotomosaico ora funziona anche se le foto caricate sono meno delle tessere richieste:
+  - il sistema riusa automaticamente le foto disponibili per riempire tutta la griglia.
+- Le foto già presenti su Drive NON vengono modificate.
+- Se una foto non è già ritagliata, il mosaico la ritaglia solo al volo, in locale, in base alla posizione della cella:
+  - celle a sinistra tendono a usare il lato sinistro dell’immagine;
+  - celle a destra tendono a usare il lato destro;
+  - celle in alto / basso fanno lo stesso verticalmente.
+- Le foto già quadrate o già ritagliate vengono usate normalmente.

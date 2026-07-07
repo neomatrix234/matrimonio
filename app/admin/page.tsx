@@ -25,12 +25,34 @@ function qLum(c:number[]){ return 0.2126*qSrgbToLinear(c[0])+0.7152*qSrgbToLinea
 function qLoadImg(url:string): Promise<HTMLImageElement>{ return new Promise((resolve,reject)=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>resolve(img); img.onerror=reject; img.src=url; }); }
 function qMix(a:number,b:number,t:number){ return a+(b-a)*t; }
 function qMixRgb(a:number[],b:number[],t:number){ return [Math.round(qMix(a[0],b[0],t)),Math.round(qMix(a[1],b[1],t)),Math.round(qMix(a[2],b[2],t))]; }
-function qGrid(total:number){
-  // anteprima rapida: meno tessere del definitivo, ma proporzione leggibile
-  if(total <= 600) return {cols:30, rows:20};
-  if(total <= 1200) return {cols:34, rows:24};
-  if(total <= 2000) return {cols:40, rows:28};
-  return {cols:45, rows:30};
+function qGrid(total:number, aspect:number=1.5){
+  const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
+  const previewTotal = Math.min(total, total <= 600 ? 600 : total <= 1200 ? 816 : total <= 2000 ? 1120 : 1350);
+  let bestCols = previewTotal;
+  let bestRows = 1;
+  let bestError = Number.POSITIVE_INFINITY;
+  for(let rows=1; rows<=Math.sqrt(previewTotal)+1; rows++){
+    if(previewTotal % rows !== 0) continue;
+    const cols = previewTotal / rows;
+    const ratio = cols / rows;
+    const error = Math.abs(ratio - safeAspect);
+    if(error < bestError){
+      bestError = error;
+      bestCols = cols;
+      bestRows = rows;
+    }
+  }
+  if(bestCols < bestRows){
+    const t = bestCols; bestCols = bestRows; bestRows = t;
+  }
+  return {cols:bestCols, rows:bestRows};
+}
+
+async function qImageAspect(url:string){
+  const img=await qLoadImg(url);
+  const w=img.naturalWidth||img.width||1;
+  const h=img.naturalHeight||img.height||1;
+  return w/h;
 }
 async function qAvgPhoto(url:string){
   const img=await qLoadImg(url); const s=16; const c=document.createElement('canvas'); c.width=s; c.height=s; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return [128,128,128];
@@ -46,9 +68,14 @@ async function qTargetColors(url:string, cols:number, rows:number){
   return out;
 }
 function qDist(a:number[],b:number[]){ return (a[0]-b[0])**2*.30+(a[1]-b[1])**2*.58+(a[2]-b[2])**2*.22+(qLum(a)*255-qLum(b)*255)**2*.65; }
-async function qTile(url:string,target:number[],tileSize:number){
+async function qTile(url:string,target:number[],tileSize:number,xNorm:number=0.5,yNorm:number=0.5){
   const img=await qLoadImg(url); const c=document.createElement('canvas'); c.width=tileSize;c.height=tileSize; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return c;
-  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height, side=Math.min(iw,ih), sx=Math.max(0,(iw-side)/2), sy=Math.max(0,(ih-side)/2);
+  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+  const side=Math.min(iw,ih);
+  let sx=0, sy=0;
+  if(iw>ih){ sx=Math.round((iw-side)*Math.max(0,Math.min(1,xNorm))); }
+  else if(ih>iw){ sy=Math.round((ih-side)*Math.max(0,Math.min(1,yNorm))); }
+  sx=Math.max(0,Math.min(iw-side,sx)); sy=Math.max(0,Math.min(ih-side,sy));
   ctx.drawImage(img,sx,sy,side,side,0,0,tileSize,tileSize); const im=ctx.getImageData(0,0,tileSize,tileSize); const d=im.data; let min=1,max=0;
   for(let i=0;i<d.length;i+=4){ const l=qLum([d[i],d[i+1],d[i+2]]); if(l<min)min=l;if(l>max)max=l; }
   const range=Math.max(.08,max-min);
@@ -57,9 +84,14 @@ async function qTile(url:string,target:number[],tileSize:number){
   for(let i=0;i<d.length;i+=4){
     let t=(qLum([d[i],d[i+1],d[i+2]])-min)/range; t=Math.max(0,Math.min(1,Math.pow(t,.88)));
     const m=t<.5?qMixRgb(dark,target,t*2):qMixRgb(target,light,(t-.5)*2);
-    d[i]=qClamp(m[0]*.985+d[i]*.015); d[i+1]=qClamp(m[1]*.985+d[i+1]*.015); d[i+2]=qClamp(m[2]*.985+d[i+2]*.015);
+    d[i]=qClamp(m[0]*.988+d[i]*.012); d[i+1]=qClamp(m[1]*.988+d[i+1]*.012); d[i+2]=qClamp(m[2]*.988+d[i+2]*.012);
   }
-  ctx.putImageData(im,0,0); return c;
+  ctx.putImageData(im,0,0);
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.globalAlpha=.10;
+  ctx.fillRect(0,0,tileSize,tileSize);
+  ctx.globalAlpha=1;
+  return c;
 }
 
 
@@ -70,25 +102,73 @@ type Lab = [number,number,number];
 type PreviewFeature = { id:string; url:string; avg:Rgb; lab:Lab; lum:number; sat:number; useCount:number };
 type PreviewCell = { index:number; color:Rgb; lab:Lab; lum:number; sat:number; importance:number };
 
-function gridForTotal(total:number){
-  if(total <= 600) return {cols:30, rows:20};
-  if(total <= 800) return {cols:40, rows:20};
-  if(total <= 1000) return {cols:40, rows:25};
-  if(total <= 1200) return {cols:40, rows:30};
-  if(total <= 1500) return {cols:50, rows:30};
-  if(total <= 2000) return {cols:50, rows:40};
-  if(total <= 2500) return {cols:50, rows:50};
-  return {cols:60, rows:50};
+function gridForTotal(total:number, aspect:number=1.5){
+  const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
+  let bestCols = total;
+  let bestRows = 1;
+  let bestError = Number.POSITIVE_INFINITY;
+
+  for(let rows=1; rows<=Math.sqrt(total)+1; rows++){
+    if(total % rows !== 0) continue;
+    const cols = total / rows;
+    const ratio = cols / rows;
+    const error = Math.abs(ratio - safeAspect);
+    if(error < bestError){
+      bestError = error;
+      bestCols = cols;
+      bestRows = rows;
+    }
+  }
+
+  if(bestCols < bestRows){
+    const t = bestCols; bestCols = bestRows; bestRows = t;
+  }
+  return {cols:bestCols, rows:bestRows};
 }
-// Griglia che rispetta le proporzioni reali della foto finale, invece di forzare
-// sempre un rettangolo 3:2. Senza questo la foto viene stirata/schiacciata e la
-// composizione risulta irriconoscibile, indipendentemente dal numero di tessere.
-function gridForTotalAspect(total:number, aspect:number){
-  const a = (aspect && isFinite(aspect) && aspect>0) ? aspect : 1.5;
-  let cols = Math.max(6, Math.round(Math.sqrt(total*a)));
-  let rows = Math.max(6, Math.round(total/cols));
-  return {cols, rows};
+
+async function previewImageAspect(url:string): Promise<number>{
+  const img = await loadImg(url);
+  const w = img.naturalWidth || img.width || 1;
+  const h = img.naturalHeight || img.height || 1;
+  return w / h;
 }
+function previewAdaptiveSquareCrop(iw:number, ih:number, xNorm:number=0.5, yNorm:number=0.5){
+  const side = Math.min(iw, ih);
+  let sx = 0;
+  let sy = 0;
+  if(iw > ih){
+    const freeX = iw - side;
+    sx = Math.round(freeX * Math.max(0, Math.min(1, xNorm)));
+  }else if(ih > iw){
+    const freeY = ih - side;
+    sy = Math.round(freeY * Math.max(0, Math.min(1, yNorm)));
+  }
+  sx = Math.max(0, Math.min(iw - side, sx));
+  sy = Math.max(0, Math.min(ih - side, sy));
+  return {side,sx,sy};
+}
+function previewNeighborPenalty(photoId:string, cellIndex:number, cols:number, rows:number, assigned:Map<number,string>){
+  let penalty = 0;
+  const x = cellIndex % cols;
+  const y = Math.floor(cellIndex / cols);
+  for(let dy=-2; dy<=2; dy++){
+    for(let dx=-2; dx<=2; dx++){
+      if(dx===0 && dy===0) continue;
+      const nx=x+dx, ny=y+dy;
+      if(nx<0||ny<0||nx>=cols||ny>=rows) continue;
+      const idx = ny*cols+nx;
+      const pid = assigned.get(idx);
+      if(pid===photoId){
+        const dist = Math.abs(dx)+Math.abs(dy);
+        if(dist<=1) penalty += 90000;
+        else if(dist===2) penalty += 24000;
+        else penalty += 9000;
+      }
+    }
+  }
+  return penalty;
+}
+
 function clamp(v:number,min=0,max=255){ return Math.max(min, Math.min(max, v)); }
 function clamp01(v:number){ return Math.max(0, Math.min(1, v)); }
 function mix(a:number,b:number,t:number){ return a + (b-a)*t; }
@@ -185,8 +265,8 @@ async function previewPhotoFeature(url:string, id:string): Promise<PreviewFeatur
   const avg:Rgb=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];
   return {id,url,avg,lab:rgbToLab(avg),lum:luminance(avg),sat:saturation(avg),useCount:0};
 }
-async function previewTargetCells(url:string, cols:number, rows:number, preloaded?:HTMLImageElement): Promise<PreviewCell[]>{
-  const img=preloaded || await loadImg(url);
+async function previewTargetCells(url:string, cols:number, rows:number): Promise<PreviewCell[]>{
+  const img=await loadImg(url);
   const canvas=document.createElement('canvas');
   canvas.width=cols; canvas.height=rows;
   const ctx=canvas.getContext('2d', { willReadFrequently:true });
@@ -210,7 +290,7 @@ async function previewTargetCells(url:string, cols:number, rows:number, preloade
   }
   return cells;
 }
-async function createPreviewMosaicTile(url:string, target:Rgb, size:number): Promise<HTMLCanvasElement>{
+async function createPreviewMosaicTile(url:string, target:Rgb, size:number, xNorm:number=0.5, yNorm:number=0.5): Promise<HTMLCanvasElement>{
   const img=await loadImg(url);
   const canvas=document.createElement('canvas');
   canvas.width=size; canvas.height=size;
@@ -218,8 +298,8 @@ async function createPreviewMosaicTile(url:string, target:Rgb, size:number): Pro
   if(!ctx) return canvas;
 
   const iw=img.naturalWidth || img.width, ih=img.naturalHeight || img.height;
-  const side=Math.min(iw,ih), sx=Math.max(0,Math.floor((iw-side)/2)), sy=Math.max(0,Math.floor((ih-side)/2));
-  ctx.drawImage(img,sx,sy,side,side,0,0,size,size);
+  const crop = previewAdaptiveSquareCrop(iw, ih, xNorm, yNorm);
+  ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
   const image=ctx.getImageData(0,0,size,size), d=image.data;
 
   let minLum=1, maxLum=0;
@@ -249,13 +329,11 @@ async function createPreviewMosaicTile(url:string, target:Rgb, size:number): Pro
     d[i+2]=clamp((nb-128)*1.03+128);
   }
   ctx.putImageData(image,0,0);
-  // Una sola passata leggera di tinta (non piu' multiply+screen sommati, che
-  // appiattivano le foto in macchie di colore uniforme e "sporcavano" i toni).
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=.08;
-  ctx.fillRect(0,0,size,size);
+
   ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.globalAlpha=.12;
+  ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
   return canvas;
 }
@@ -445,9 +523,8 @@ export default function AdminPage(){
       if(!photos.length) throw new Error('Carica prima alcune foto invitati o usa Upload test.');
       const total=Number(data?.totalTiles||600);
       const targetUrlLocal=`/api/image?id=${data.targetFileId}&v=${data?.target?.updated||Date.now()}`;
-      const targetImgQ = await qLoadImg(targetUrlLocal);
-      const aspectQ = (targetImgQ.naturalWidth||targetImgQ.width) / (targetImgQ.naturalHeight||targetImgQ.height);
-      const {cols,rows}=gridForTotalAspect(total, aspectQ);
+      const aspect = await qImageAspect(targetUrlLocal);
+      const {cols,rows}=qGrid(total, aspect);
       const tileSize=12;
       const canvas=document.createElement('canvas');
       canvas.width=cols*tileSize; canvas.height=rows*tileSize;
@@ -459,38 +536,64 @@ export default function AdminPage(){
       const targetColors=await qTargetColors(targetUrlLocal,cols,rows);
 
       setPreviewText('Analizzo miniature foto...');
-      const maxPhotos=Math.min(photos.length, 260);
+      const maxPhotos=Math.min(photos.length, 340);
       const features:any[]=[];
       for(let i=0;i<maxPhotos;i++){
         const p=photos[i]; const url=`/api/image?id=${p.id}`;
         try{ features.push({id:p.id,url,avg:await qAvgPhoto(url),use:0}); }catch{}
-        if(i%12===0) await new Promise(r=>setTimeout(r,0));
+        if(i%14===0) await new Promise(r=>setTimeout(r,0));
       }
       if(!features.length) throw new Error('Non riesco ad analizzare le foto.');
 
-      setPreviewText('Creo anteprima veloce...');
+      const assigned = new Map<number,string>();
+      setPreviewText(features.length < total ? `Creo anteprima veloce: per il test riuso automaticamente le ${features.length} foto disponibili.` : 'Creo anteprima veloce...');
       for(let i=0;i<targetColors.length;i++){
         const target=targetColors[i];
+        const x = i % cols;
+        const y = Math.floor(i / cols);
         let best=features[0], bestScore=Number.POSITIVE_INFINITY;
+
         for(const f of features){
-          const score=qDist(f.avg,target)+f.use*f.use*140;
+          let score=qDist(f.avg,target)+f.use*f.use*140;
+          for(let dy=-2; dy<=2; dy++){
+            for(let dx=-2; dx<=2; dx++){
+              if(dx===0 && dy===0) continue;
+              const nx=x+dx, ny=y+dy;
+              if(nx<0||ny<0||nx>=cols||ny>=rows) continue;
+              const idx=ny*cols+nx;
+              if(assigned.get(idx)===f.id){
+                const dist=Math.abs(dx)+Math.abs(dy);
+                if(dist<=1) score += 60000;
+                else if(dist===2) score += 16000;
+                else score += 6000;
+              }
+            }
+          }
           if(score<bestScore){bestScore=score;best=f;}
         }
+
         best.use++;
-        const tile=await qTile(best.url,target,tileSize);
-        ctx.drawImage(tile,(i%cols)*tileSize,Math.floor(i/cols)*tileSize,tileSize,tileSize);
-        if(i%32===0){ setPreviewFastUrl(canvas.toDataURL('image/jpeg',.82)); await new Promise(r=>setTimeout(r,0)); }
+        assigned.set(i,best.id);
+        const xNorm = cols <= 1 ? 0.5 : x / (cols - 1);
+        const yNorm = rows <= 1 ? 0.5 : y / (rows - 1);
+        const tile=await qTile(best.url,target,tileSize,xNorm,yNorm);
+        ctx.drawImage(tile,x*tileSize,y*tileSize,tileSize,tileSize);
+
+        if(i%36===0){
+          setPreviewFastUrl(canvas.toDataURL('image/jpeg',.84));
+          await new Promise(r=>setTimeout(r,0));
+        }
       }
 
-      // Overlay leggero della foto finale: tecnica usata nei wall mosaic reali per leggere bene la figura da lontano.
+      // Overlay leggero della foto finale: aiuta a leggere la figura, ma senza coprire le tessere.
       const targetImg=await qLoadImg(targetUrlLocal);
       ctx.globalCompositeOperation='source-over';
-      ctx.globalAlpha=.34;
+      ctx.globalAlpha=.18;
       ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
       ctx.globalAlpha=1;
 
-      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.9));
-      setPreviewText(`Anteprima pronta: ${cols*rows} tessere ridotte. Uso definitivo: ${data.totalTiles} tessere.`);
+      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.91));
+      setPreviewText(`Anteprima pronta: ${cols}×${rows} = ${cols*rows} tessere ridotte. Uso finale: ${data.totalTiles} tessere.`);
       showAdminMsg('Anteprima veloce pronta.');
     }catch(e:any){
       setErr(e?.message || 'Errore anteprima');
@@ -508,15 +611,12 @@ export default function AdminPage(){
       const photos:PreviewPhoto[] = (data?.photos || []).slice();
       if(!photos.length) throw new Error('Non ci sono ancora foto invitati caricate.');
       const total = Number(data?.totalTiles || 600);
-      const cellSize = total >= 2500 ? 10 : total >= 1500 ? 11 : total >= 1000 ? 12 : 16;
+      const cellSize = total >= 2500 ? 10 : total >= 1500 ? 11 : total >= 1000 ? 12 : 14;
 
       const targetUrlLocal = `/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`;
-      const targetImgEl = await loadImg(targetUrlLocal);
-      const targetAspect = (targetImgEl.naturalWidth||targetImgEl.width) / (targetImgEl.naturalHeight||targetImgEl.height);
-      // La griglia segue le proporzioni reali della foto finale: prima veniva
-      // forzato un rettangolo fisso e la foto risultava stirata/irriconoscibile.
-      const {cols,rows} = gridForTotalAspect(total, targetAspect);
-      const cells = await previewTargetCells(targetUrlLocal, cols, rows, targetImgEl);
+      const aspect = await previewImageAspect(targetUrlLocal);
+      const {cols,rows} = gridForTotal(total, aspect);
+      const cells = await previewTargetCells(targetUrlLocal, cols, rows);
       const sortedCells = cells.slice().sort((a,b)=>b.importance-a.importance);
 
       const canvas=document.createElement('canvas');
@@ -541,21 +641,8 @@ export default function AdminPage(){
 
       const maxReuse = Math.max(1, Math.ceil(total / Math.max(1, features.length)));
       const used = new Set<number>();
-      // Tiene traccia di quale foto e' stata messa in ogni cella, per evitare
-      // di ripetere la stessa foto in celle adiacenti: e' questo che creava
-      // le grosse "macchie" piatte invece di una texture a mosaico.
-      const placedAt:(PreviewFeature|null)[] = new Array(cols*rows).fill(null);
-      const neighborPenalty = (idx:number, f:PreviewFeature)=>{
-        let p = 0;
-        const x = idx % cols, y = Math.floor(idx/cols);
-        const check=(nx:number,ny:number)=>{
-          if(nx<0||ny<0||nx>=cols||ny>=rows) return;
-          const n = placedAt[ny*cols+nx];
-          if(n && n.id===f.id) p += 260000;
-        };
-        check(x-1,y); check(x+1,y); check(x,y-1); check(x,y+1);
-        return p;
-      };
+      const assigned = new Map<number,string>();
+      setPreviewProgress(features.length < total ? `Foto insufficienti per il totale richiesto: per il test riuso automaticamente le ${features.length} foto disponibili.` : 'Creo anteprima...');
 
       for(let i=0;i<sortedCells.length;i++){
         const cell = sortedCells[i];
@@ -563,7 +650,7 @@ export default function AdminPage(){
         let bestScore=Number.POSITIVE_INFINITY;
 
         for(const f of features){
-          const score = previewPhotoCellScore(f, cell, maxReuse) + neighborPenalty(cell.index, f);
+          const score = previewPhotoCellScore(f, cell, maxReuse) + previewNeighborPenalty(f.id, cell.index, cols, rows, assigned);
           if(score < bestScore){
             bestScore = score;
             best = f;
@@ -572,12 +659,14 @@ export default function AdminPage(){
         if(!best) continue;
 
         best.useCount += 1;
-        placedAt[cell.index] = best;
-        const tileCanvas = await createPreviewMosaicTile(best.url, cell.color, cellSize);
+        const xNorm = cols <= 1 ? 0.5 : (cell.index % cols) / (cols - 1);
+        const yNorm = rows <= 1 ? 0.5 : Math.floor(cell.index / cols) / (rows - 1);
+        const tileCanvas = await createPreviewMosaicTile(best.url, cell.color, cellSize, xNorm, yNorm);
         const x = (cell.index % cols) * cellSize;
         const y = Math.floor(cell.index / cols) * cellSize;
         ctx.drawImage(tileCanvas, x, y, cellSize, cellSize);
         used.add(cell.index);
+        assigned.set(cell.index, best.id);
 
         if((i+1)%24===0 || i===sortedCells.length-1){
           setPreviewProgress(`Creo anteprima ${i+1} / ${sortedCells.length} tessere...`);
