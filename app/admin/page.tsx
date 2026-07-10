@@ -4,6 +4,132 @@ import Link from 'next/link';
 
 const options = [600, 800, 1000, 1200, 1500, 2000, 2500, 3000];
 
+type CropState = {
+  src:string;
+  width:number;
+  height:number;
+  baseScale:number;
+  zoom:number;
+  x:number;
+  y:number;
+  frameW:number;
+  frameH:number;
+};
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+function targetCropFrame(width:number, height:number){
+  const aspect = Math.max(0.45, Math.min(2.4, width / Math.max(1, height)));
+  const maxSide = 320;
+  let frameW = maxSide;
+  let frameH = Math.round(frameW / aspect);
+  if(frameH > 320){
+    frameH = 320;
+    frameW = Math.round(frameH * aspect);
+  }
+  frameW = Math.max(220, Math.min(340, frameW));
+  frameH = Math.max(220, Math.min(340, frameH));
+  return { frameW, frameH };
+}
+function clampTargetCropPosition(x:number, y:number, crop:CropState, zoom:number){
+  const scale = crop.baseScale * zoom;
+  const scaledW = crop.width * scale;
+  const scaledH = crop.height * scale;
+  const minX = Math.min(0, crop.frameW - scaledW);
+  const minY = Math.min(0, crop.frameH - scaledH);
+  return {
+    x: Math.max(minX, Math.min(0, x)),
+    y: Math.max(minY, Math.min(0, y))
+  };
+}
+function enhanceTargetCanvas(canvas:HTMLCanvasElement){
+  const ctx = canvas.getContext('2d', { willReadFrequently:true });
+  if(!ctx) return;
+  const w = canvas.width, h = canvas.height;
+  const image = ctx.getImageData(0,0,w,h);
+  const d = image.data;
+  const stride = w * 4;
+  let lumSum = 0, lumSq = 0, n = 0;
+  for(let i=0;i<d.length;i+=4){
+    const lum = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+    lumSum += lum;
+    lumSq += lum*lum;
+    n++;
+  }
+  const mean = lumSum / Math.max(1, n);
+  const variance = Math.max(0, lumSq / Math.max(1, n) - mean*mean);
+  const deviation = Math.sqrt(variance);
+  const contrast = deviation < 38 ? 1.18 : deviation < 52 ? 1.13 : 1.08;
+  const saturation = deviation < 40 ? 1.14 : 1.10;
+  const brightness = mean < 110 ? 10 : mean < 125 ? 4 : 0;
+  const gamma = mean < 118 ? 0.96 : 1.0;
+
+  for(let i=0;i<d.length;i+=4){
+    let r = d[i], g = d[i+1], b = d[i+2];
+    const gray = 0.299*r + 0.587*g + 0.114*b;
+    r = gray + (r-gray) * saturation;
+    g = gray + (g-gray) * saturation;
+    b = gray + (b-gray) * saturation;
+    r = (r - 128) * contrast + 128 + brightness;
+    g = (g - 128) * contrast + 128 + brightness;
+    b = (b - 128) * contrast + 128 + brightness;
+    d[i]   = qClamp(Math.round(255 * Math.pow(Math.max(0, Math.min(255, r)) / 255, gamma)));
+    d[i+1] = qClamp(Math.round(255 * Math.pow(Math.max(0, Math.min(255, g)) / 255, gamma)));
+    d[i+2] = qClamp(Math.round(255 * Math.pow(Math.max(0, Math.min(255, b)) / 255, gamma)));
+  }
+
+  const base = new Uint8ClampedArray(d);
+  const sharpen = 0.22;
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const i = y*stride + x*4;
+      for(let c=0;c<3;c++){
+        const blur = (base[i-4+c] + base[i+4+c] + base[i-stride+c] + base[i+stride+c]) / 4;
+        d[i+c] = qClamp(Math.round(base[i+c] + (base[i+c] - blur) * sharpen));
+      }
+    }
+  }
+  ctx.putImageData(image,0,0);
+}
+async function renderOptimizedTargetImage(crop: CropState): Promise<{base64:string;previewUrl:string;sizeKb:number;width:number;height:number}> {
+  const img = await loadImageFromSrc(crop.src);
+  const scale = crop.baseScale * crop.zoom;
+  const srcX = Math.max(0, (-crop.x) / scale);
+  const srcY = Math.max(0, (-crop.y) / scale);
+  const srcW = Math.min(img.naturalWidth - srcX, crop.frameW / scale);
+  const srcH = Math.min(img.naturalHeight - srcY, crop.frameH / scale);
+  const aspect = Math.max(0.45, Math.min(2.4, srcW / Math.max(1, srcH)));
+  const maxSide = 1800;
+  let outW = aspect >= 1 ? maxSide : Math.round(maxSide * aspect);
+  let outH = aspect >= 1 ? Math.round(maxSide / aspect) : maxSide;
+  outW = Math.max(900, outW);
+  outH = Math.max(900, outH);
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  if(!ctx) throw new Error('Canvas non disponibile.');
+  ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
+  enhanceTargetCanvas(canvas);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  const base64 = dataUrl.split(',')[1] || '';
+  return { base64, previewUrl:dataUrl, sizeKb:Math.round((base64.length*0.75)/1024), width:outW, height:outH };
+}
+
 function readOriginalFile(file: File): Promise<{base64:string;previewUrl:string;sizeKb:number}> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -391,10 +517,16 @@ export default function AdminPage(){
   const [busy,setBusy]=useState(false);
   const [busyText,setBusyText]=useState('Operazione in corso...');
   const msgTimer = useRef<any>(null);
+  const targetFileInputRef = useRef<HTMLInputElement|null>(null);
+  const targetCropDragRef = useRef<{startX:number;startY:number;originX:number;originY:number} | null>(null);
+  const targetCropStateRef = useRef<CropState|null>(null);
 
   const [targetBase64,setTargetBase64]=useState('');
   const [targetPreview,setTargetPreview]=useState('');
   const [targetInfo,setTargetInfo]=useState('');
+  const [targetCropOpen,setTargetCropOpen]=useState(false);
+  const [targetCropBusy,setTargetCropBusy]=useState(false);
+  const [targetCropState,setTargetCropState]=useState<CropState|null>(null);
   const [bgBase64,setBgBase64]=useState('');
   const [bgPreview,setBgPreview]=useState('');
   const [bgInfo,setBgInfo]=useState('');
@@ -412,15 +544,30 @@ export default function AdminPage(){
   const [previewProgress,setPreviewProgress]=useState('');
   const [previewUrl,setPreviewUrl]=useState('');
 
+  useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
+
   useEffect(()=>{
     const p=sessionStorage.getItem('fm_admin_password');
     if(p){setPassword(p); setLogged(true); load(p);}
     const clearAdmin = () => { sessionStorage.removeItem('fm_admin_password'); };
+    const onPointerMove = (e: PointerEvent) => {
+      if(!targetCropDragRef.current || !targetCropStateRef.current) return;
+      const current = targetCropStateRef.current;
+      const nextX = targetCropDragRef.current.originX + (e.clientX - targetCropDragRef.current.startX);
+      const nextY = targetCropDragRef.current.originY + (e.clientY - targetCropDragRef.current.startY);
+      const clamped = clampTargetCropPosition(nextX, nextY, current, current.zoom);
+      setTargetCropState({...current, x:clamped.x, y:clamped.y});
+    };
+    const onPointerUp = () => { targetCropDragRef.current = null; };
     window.addEventListener('pagehide', clearAdmin);
     window.addEventListener('beforeunload', clearAdmin);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
     return () => {
       window.removeEventListener('pagehide', clearAdmin);
       window.removeEventListener('beforeunload', clearAdmin);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
     };
   },[]);
 
@@ -536,11 +683,85 @@ export default function AdminPage(){
     }catch{}
   }
 
+  async function openTargetCropper(file: File){
+    const src = await readFileAsDataUrl(file);
+    const img = await loadImageFromSrc(src);
+    const { frameW, frameH } = targetCropFrame(img.naturalWidth, img.naturalHeight);
+    const baseScale = Math.max(frameW / img.naturalWidth, frameH / img.naturalHeight);
+    const scaledW = img.naturalWidth * baseScale;
+    const scaledH = img.naturalHeight * baseScale;
+    setTargetCropState({
+      src,
+      width:img.naturalWidth,
+      height:img.naturalHeight,
+      baseScale,
+      zoom:1,
+      x:(frameW - scaledW) / 2,
+      y:(frameH - scaledH) / 2,
+      frameW,
+      frameH,
+    });
+    setTargetCropOpen(true);
+  }
   async function onTargetChange(e:React.ChangeEvent<HTMLInputElement>){
     const file=e.target.files?.[0]; setTargetBase64(''); setTargetPreview(''); setTargetInfo(''); setErr('');
     if(!file) return;
-    try{setBusyText('Leggo foto finale...'); setBusy(true); const r=await readOriginalFile(file); setTargetBase64(r.base64); setTargetPreview(r.previewUrl); setTargetInfo(`Foto finale pronta in originale, circa ${r.sizeKb} KB.`);}
-    catch(e:any){setErr(e?.message||'Errore lettura foto finale');} finally{setBusy(false);}
+    try{
+      await openTargetCropper(file);
+    }catch(e:any){
+      setErr(e?.message||'Errore preparazione foto finale');
+    }
+  }
+  function onTargetCropPointerDown(e:React.PointerEvent<HTMLDivElement>){
+    if(!targetCropState) return;
+    e.preventDefault();
+    targetCropDragRef.current = {
+      startX:e.clientX,
+      startY:e.clientY,
+      originX:targetCropState.x,
+      originY:targetCropState.y,
+    };
+  }
+  function onTargetCropZoomChange(nextZoom:number){
+    if(!targetCropState) return;
+    const oldScale = targetCropState.baseScale * targetCropState.zoom;
+    const newScale = targetCropState.baseScale * nextZoom;
+    const centerSourceX = (targetCropState.frameW / 2 - targetCropState.x) / oldScale;
+    const centerSourceY = (targetCropState.frameH / 2 - targetCropState.y) / oldScale;
+    const nextX = targetCropState.frameW / 2 - centerSourceX * newScale;
+    const nextY = targetCropState.frameH / 2 - centerSourceY * newScale;
+    const clamped = clampTargetCropPosition(nextX, nextY, targetCropState, nextZoom);
+    setTargetCropState({...targetCropState, zoom:nextZoom, x:clamped.x, y:clamped.y});
+  }
+  function resetTargetCrop(){
+    if(!targetCropState) return;
+    const scaledW = targetCropState.width * targetCropState.baseScale;
+    const scaledH = targetCropState.height * targetCropState.baseScale;
+    setTargetCropState({
+      ...targetCropState,
+      zoom:1,
+      x:(targetCropState.frameW - scaledW) / 2,
+      y:(targetCropState.frameH - scaledH) / 2,
+    });
+  }
+  async function confirmTargetCrop(){
+    if(!targetCropState) return;
+    try{
+      setTargetCropBusy(true);
+      const prepared = await renderOptimizedTargetImage(targetCropState);
+      setTargetBase64(prepared.base64);
+      setTargetPreview(prepared.previewUrl);
+      setTargetInfo(`Area scelta e ottimizzata per il mosaico: ${prepared.width}×${prepared.height}, circa ${prepared.sizeKb} KB.`);
+      setTargetCropOpen(false);
+    }catch(e:any){
+      setErr(e?.message||'Errore adattamento foto finale');
+    }finally{
+      setTargetCropBusy(false);
+    }
+  }
+  function reopenTargetCrop(){
+    if(targetCropState) setTargetCropOpen(true);
+    else targetFileInputRef.current?.click();
   }
   async function onBgChange(e:React.ChangeEvent<HTMLInputElement>){
     const file=e.target.files?.[0]; setBgBase64(''); setBgPreview(''); setBgInfo(''); setErr('');
@@ -825,11 +1046,16 @@ export default function AdminPage(){
         <h2>1. Numero foto</h2>
         <div className="gridBtns">{options.map(n=><button className="btn" disabled={busy} key={n} onClick={()=>setTotal(n)}>{n} foto</button>)}</div>
         <div className="spacer"/><h2>2. Foto finale da riprodurre</h2>
-        <p>Salvata come <b>__TARGET_MOSAICO.jpg</b> in dimensione originale.</p>
-        <input className="field" type="file" accept="image/*" onChange={onTargetChange}/>
-        {targetPreview&&<img className="preview" src={targetPreview} alt="Foto finale" style={{display:'block'}}/>}
+        <p>Prima scegli il <b>campo da riprodurre</b>: centra bene i soggetti, togli più sfondo inutile possibile e poi il sistema adatta automaticamente l’immagine per il mosaico con contrasto, saturazione e nitidezza migliorati. Salvata come <b>__TARGET_MOSAICO.jpg</b>.</p>
+        <input ref={targetFileInputRef} className="field" type="file" accept="image/*" onClick={(e)=>{(e.currentTarget as HTMLInputElement).value='';}} onChange={onTargetChange}/>
+        <div className="gridBtns" style={{marginTop:10}}>
+          <button className="btn secondary" type="button" onClick={()=>targetFileInputRef.current?.click()}>Scegli foto / cambia foto</button>
+          <button className="btn secondary" type="button" disabled={!targetCropState} onClick={reopenTargetCrop}>Scegli campo da riprodurre</button>
+        </div>
+        {targetPreview&&<img className="preview" src={targetPreview} alt="Foto finale ottimizzata" style={{display:'block'}}/>}
         {targetInfo&&<div className="ok">{targetInfo}</div>}
-        <div className="spacer"/><button className="btn" disabled={busy||!targetBase64} onClick={uploadTarget}>Carica foto finale</button>
+        <div className="small" style={{marginTop:8}}>Suggerimento: per i ritratti viene molto meglio se i volti occupano gran parte dell’immagine. Meno sfondo = più tessere usate sui dettagli importanti.</div>
+        <div className="spacer"/><button className="btn" disabled={busy||!targetBase64} onClick={uploadTarget}>Carica foto finale adattata</button>
         <div className="spacer"/><button className="btn danger" disabled={busy||!data?.hasTarget} onClick={clearTarget}>Cancella foto finale</button>
 
         <div className="spacer"/><h2>3. Sfondo home/upload</h2>
@@ -847,6 +1073,42 @@ export default function AdminPage(){
         <div className="spacer"/><h2>5. Cambia password Admin</h2>
         <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin" onKeyDown={(e)=>{if(e.key==='Enter' && newPassword.length>=6) changePassword();}}/>
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
+
+        {targetCropOpen && targetCropState && (
+          <div style={{position:'fixed', inset:0, zIndex:70, background:'rgba(15,10,8,.82)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+            <div style={{width:'min(94vw, 460px)', borderRadius:24, padding:'18px 18px 16px', background:'rgba(255,250,244,.96)', boxShadow:'0 30px 80px rgba(0,0,0,.38)', backdropFilter:'blur(10px)', color:'#4f3c2f'}}>
+              <h2 style={{margin:'0 0 8px', textAlign:'center', fontSize:26}}>Scegli il campo da riprodurre</h2>
+              <p style={{margin:'0 0 12px', textAlign:'center', fontSize:14, lineHeight:1.45}}>Sposta e zooma l’immagine: il mosaico renderà meglio se i soggetti importanti sono grandi e ben centrati. Alla conferma l’immagine verrà ottimizzata automaticamente per il fotomosaico.</p>
+              <div style={{display:'flex', justifyContent:'center'}}>
+                <div
+                  onPointerDown={onTargetCropPointerDown}
+                  style={{width:targetCropState.frameW, height:targetCropState.frameH, overflow:'hidden', position:'relative', borderRadius:20, border:'2px solid rgba(201,168,112,.9)', boxShadow:'0 0 0 9999px rgba(0,0,0,.26) inset, 0 8px 30px rgba(0,0,0,.18)', background:'#f4eee7', touchAction:'none', userSelect:'none'}}
+                >
+                  <img
+                    src={targetCropState.src}
+                    alt="Campo da riprodurre"
+                    draggable={false}
+                    style={{position:'absolute', left:targetCropState.x, top:targetCropState.y, width:targetCropState.width * targetCropState.baseScale * targetCropState.zoom, height:targetCropState.height * targetCropState.baseScale * targetCropState.zoom, maxWidth:'none', maxHeight:'none', pointerEvents:'none', userSelect:'none'}}
+                  />
+                  <div style={{position:'absolute', inset:0, border:'2px solid rgba(255,255,255,.95)', borderRadius:20, boxSizing:'border-box', boxShadow:'inset 0 0 0 1px rgba(0,0,0,.1)'}} />
+                </div>
+              </div>
+              <div style={{marginTop:16}}>
+                <div style={{display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:6}}>
+                  <span>Zoom</span>
+                  <span>{targetCropState.zoom.toFixed(2)}×</span>
+                </div>
+                <input type="range" min="1" max="3.2" step="0.01" value={targetCropState.zoom} onChange={(e)=>onTargetCropZoomChange(Number(e.target.value))} style={{width:'100%'}} />
+              </div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:16}}>
+                <button className="btn secondary" type="button" onClick={()=>setTargetCropOpen(false)} disabled={targetCropBusy}>Annulla</button>
+                <button className="btn secondary" type="button" onClick={resetTargetCrop} disabled={targetCropBusy}>Reimposta</button>
+                <button className="btn secondary" type="button" onClick={()=>targetFileInputRef.current?.click()} disabled={targetCropBusy}>Cambia foto</button>
+                <button className="btn" type="button" onClick={confirmTargetCrop} disabled={targetCropBusy}>{targetCropBusy ? 'Adatto immagine...' : 'Conferma area e adatta'}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {err&&<><div className="spacer"/><div className="error" style={{display:'block'}}>{err}</div></>}
       </section>
