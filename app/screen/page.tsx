@@ -268,6 +268,19 @@ function patchColorAt(patch:Rgb[]|undefined, xNorm:number, yNorm:number, fallbac
   const y=Math.max(0, Math.min(ps-1, Math.floor(yNorm*ps)));
   return patch[y*ps+x] || fallback;
 }
+function patchEdgeAt(patch:Rgb[]|undefined, xNorm:number, yNorm:number):number{
+  const ps=PROFESSIONAL_MOSAIC.patchSize;
+  if(!patch || patch.length < ps*ps) return 0;
+  const x=Math.max(1, Math.min(ps-2, Math.floor(xNorm*ps)));
+  const y=Math.max(1, Math.min(ps-2, Math.floor(yNorm*ps)));
+  const c=patch[y*ps+x];
+  const l=patch[y*ps+(x-1)];
+  const r=patch[y*ps+(x+1)];
+  const u=patch[(y-1)*ps+x];
+  const d=patch[(y+1)*ps+x];
+  const cl=luminance(c), ll=luminance(l), rl=luminance(r), ul=luminance(u), dl=luminance(d);
+  return Math.max(0, Math.min(1, (Math.abs(cl-ll)+Math.abs(cl-rl)+Math.abs(cl-ul)+Math.abs(cl-dl))*2.4));
+}
 
 function sigmoid(x:number){
   return 1 / (1 + Math.exp(-x));
@@ -446,7 +459,7 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
-  const crop = adaptiveSquareCrop(iw, ih, 0.5, 0.5);
+  const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
   const image=ctx.getImageData(0,0,size,size);
@@ -458,14 +471,17 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     if(lum<minLum) minLum=lum;
     if(lum>maxLum) maxLum=lum;
   }
-  const range=Math.max(0.065, maxLum-minLum);
-  const preserve = 0.08;
+  const range=Math.max(0.06, maxLum-minLum);
+  const keepSource = 0.10;
 
   for(let i=0;i<d.length;i+=4){
     const pixelIndex=i/4;
     const px=pixelIndex%size;
     const py=Math.floor(pixelIndex/size);
-    const localTarget = patchColorAt(targetPatch, px/(size-1), py/(size-1), target);
+    const nx = size <= 1 ? 0.5 : px/(size-1);
+    const ny = size <= 1 ? 0.5 : py/(size-1);
+    const localTarget = patchColorAt(targetPatch, nx, ny, target);
+    const edgeStrength = patchEdgeAt(targetPatch, nx, ny);
 
     const r=d[i], g=d[i+1], b=d[i+2];
     const srcLum=luminance([r,g,b]);
@@ -474,20 +490,26 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     const [sh,ss]=rgbToHsl([r,g,b]);
     const [th,ts,tl]=rgbToHsl(localTarget);
 
-    const outHue=blendHue(sh, th, 0.82);
-    const outSat=clamp01(ts*0.82 + ss*0.28 + 0.035);
-    const outLum=clamp01(tl + srcDetail);
-    const mapped=hslToRgb(outHue, outSat, outLum);
+    const baseHue=blendHue(sh, th, 0.76);
+    const baseSat=clamp01(ts*0.76 + ss*0.34 + 0.03);
+    const baseLum=clamp01(tl + srcDetail*0.95);
+    const baseRgb=hslToRgb(baseHue, baseSat, baseLum);
 
-    d[i]   = clamp(Math.round(mapped[0]*(1-preserve)+r*preserve));
-    d[i+1] = clamp(Math.round(mapped[1]*(1-preserve)+g*preserve));
-    d[i+2] = clamp(Math.round(mapped[2]*(1-preserve)+b*preserve));
+    // incorpora direttamente la porzione locale dell'immagine target nella tessera,
+    // non solo il suo colore medio. Le zone di dettaglio del target influenzano di più.
+    const targetInject = 0.18 + edgeStrength * 0.26;
+    const infused = mixRgb(baseRgb, localTarget, targetInject);
+    const finalRgb = mixRgb(infused, [r,g,b], keepSource);
+
+    d[i]   = clamp(finalRgb[0]);
+    d[i+1] = clamp(finalRgb[1]);
+    d[i+2] = clamp(finalRgb[2]);
   }
 
-  // lieve nitidezza per far leggere meglio la tessera dentro lo slot
+  // lieve nitidezza per leggere meglio la tessera nello slot
   const base = new Uint8ClampedArray(d);
   const stride = size * 4;
-  const sharpen = 0.16;
+  const sharpen = 0.18;
   for(let y=1;y<size-1;y++){
     for(let x=1;x<size-1;x++){
       const idx = y*stride + x*4;
@@ -497,17 +519,35 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
       }
     }
   }
-
   ctx.putImageData(image,0,0);
 
-  ctx.globalCompositeOperation='source-over';
-  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=0.08;
-  ctx.fillRect(0,0,size,size);
-  ctx.globalAlpha=1;
+  // secondo passaggio: vela leggera della patch locale per imprimere la geometria della zona target
+  if(targetPatch && targetPatch.length){
+    const patchCanvas=document.createElement('canvas');
+    const ps=PROFESSIONAL_MOSAIC.patchSize;
+    patchCanvas.width=ps; patchCanvas.height=ps;
+    const pctx=patchCanvas.getContext('2d');
+    if(pctx){
+      const pimg=pctx.createImageData(ps,ps);
+      for(let i=0;i<targetPatch.length && i<ps*ps;i++){
+        const off=i*4; const rgb=targetPatch[i];
+        pimg.data[off]=rgb[0]; pimg.data[off+1]=rgb[1]; pimg.data[off+2]=rgb[2]; pimg.data[off+3]=255;
+      }
+      pctx.putImageData(pimg,0,0);
+      ctx.imageSmoothingEnabled=true;
+      ctx.globalCompositeOperation='soft-light';
+      ctx.globalAlpha=0.26;
+      ctx.drawImage(patchCanvas,0,0,size,size);
+      ctx.globalCompositeOperation='source-over';
+      ctx.globalAlpha=0.08;
+      ctx.drawImage(patchCanvas,0,0,size,size);
+      ctx.globalAlpha=1;
+    }
+  }
 
   return canvas.toDataURL('image/jpeg', .90);
 }
+
 
 
 export default function ScreenPage(){
@@ -610,7 +650,8 @@ export default function ScreenPage(){
       // cerca una cella adatta tra un sottoinsieme di celle ancora libere:
       // è molto più veloce e permette avvio immediato.
       let checked=0;
-      const maxChecked = total >= 2500 ? 1400 : total >= 1500 ? 1100 : total >= 1000 ? 850 : 520;
+      const fullSearchAtStart = usedIndexes.current.size < Math.min(180, Math.round(total * 0.18));
+      const maxChecked = fullSearchAtStart ? cellsByImportance.length : (total >= 2500 ? 1400 : total >= 1500 ? 1100 : total >= 1000 ? 850 : 520);
       for(const cell of cellsByImportance){
         if(usedIndexes.current.has(cell.index)) continue;
         const score=photoCellScore(feature,cell,maxReuse) + neighborDuplicatePenalty(feature.id, cell.index, cols, rows);
