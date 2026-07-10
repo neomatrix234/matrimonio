@@ -269,6 +269,7 @@ type Lab = [number,number,number];
 type PreviewFeature = { id:string; url:string; avg:Rgb; lab:Lab; lum:number; sat:number; useCount:number };
 type PreviewCell = { index:number; color:Rgb; lab:Lab; lum:number; sat:number; importance:number };
 type PreviewTileData = { index:number; row:number; col:number; originalUrl:string; renderedUrl:string; targetColor:Rgb; };
+type MosaicRenderStyle = 'portraitOverlay' | 'classicTiles';
 
 function gridForTotal(total:number, aspect:number=1.5){
   const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
@@ -465,7 +466,8 @@ async function createPreviewMosaicTile(
   rows:number,
   col:number,
   row:number,
-  renderSize:number=180
+  renderSize:number=180,
+  style:MosaicRenderStyle='portraitOverlay'
 ): Promise<HTMLCanvasElement>{
   const [sourceImg,targetImg]=await Promise.all([loadImg(sourceUrl),loadImg(targetUrl)]);
   const canvas=document.createElement('canvas');
@@ -503,6 +505,14 @@ async function createPreviewMosaicTile(
   }
   const range=Math.max(0.06,maxLum-minLum);
 
+  const mode = style === 'classicTiles' ? {
+    wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
+    textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
+  } : {
+    wTargetBase:0.33, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.48,
+    textureSoft:0.08, textureMultiply:0.03, overlaySoft:0.05, overlayColor:0.07, overlaySource:0.02
+  };
+
   for(let i=0;i<d.length;i+=4){
     const srcLum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
     const A=clamp01((srcLum-minLum)/range);
@@ -513,11 +523,11 @@ async function createPreviewMosaicTile(
     const blend=(tc:number, sc:number)=>{
       const B=tc/255;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      const wTarget=0.36+(1-midMask)*0.06;
-      const wSoft=0.13+midMask*0.04;
-      const wPhotoLum=0.20+midMask*0.10;
+      const wTarget=mode.wTargetBase+(1-midMask)*mode.wTargetEdge;
+      const wSoft=mode.wSoft+midMask*0.03;
+      const wPhotoLum=mode.wPhotoLum+midMask*0.06;
       const fused=clamp01(B*wTarget+soft*wSoft+A*wPhotoLum);
-      const keepOriginal=0.42;
+      const keepOriginal=mode.keepOriginal;
       return clamp(Math.round((fused*(1-keepOriginal)+(sc/255)*keepOriginal)*255));
     };
     d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
@@ -535,24 +545,24 @@ async function createPreviewMosaicTile(
     for(let i=0;i<xd.length;i+=4){
       const lum=(0.2126*xd[i]+0.7152*xd[i+1]+0.0722*xd[i+2])/255;
       const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=52;
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=style === 'classicTiles' ? 42 : 48;
     }
     tx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.11;
+    ctx.globalAlpha=mode.textureSoft;
     ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
     ctx.globalCompositeOperation='multiply';
-    ctx.globalAlpha=0.04;
+    ctx.globalAlpha=mode.textureMultiply;
     ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
   }
   ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.07;
+  ctx.globalAlpha=mode.overlaySoft;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalCompositeOperation='color';
-  ctx.globalAlpha=0.12;
+  ctx.globalAlpha=mode.overlayColor;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.03;
+  ctx.globalAlpha=mode.overlaySource;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalAlpha=1;
   return canvas;
@@ -675,8 +685,18 @@ export default function AdminPage(){
   const [selectedPreviewDetailUrl,setSelectedPreviewDetailUrl]=useState('');
   const [selectedPreviewTargetPatchUrl,setSelectedPreviewTargetPatchUrl]=useState('');
   const [selectedPreviewLoading,setSelectedPreviewLoading]=useState(false);
+  const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
 
   useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
+  useEffect(()=>{
+    if(typeof window==='undefined') return;
+    const saved = window.localStorage.getItem('fm_mosaic_style');
+    if(saved === 'portraitOverlay' || saved === 'classicTiles') setMosaicStyle(saved);
+  }, []);
+  useEffect(()=>{
+    if(typeof window==='undefined') return;
+    window.localStorage.setItem('fm_mosaic_style', mosaicStyle);
+  }, [mosaicStyle]);
 
   useEffect(()=>{
     const onEscape=(e:KeyboardEvent)=>{
@@ -1022,7 +1042,7 @@ export default function AdminPage(){
         }
         best.use++;
         assigned.set(i,best.id);
-        const tileCanvas=await createPreviewMosaicTile(best.url,targetUrlLocal,cols,rows,x,y,180);
+        const tileCanvas=await createPreviewMosaicTile(best.url,targetUrlLocal,cols,rows,x,y,180,mosaicStyle);
         ctx.drawImage(tileCanvas,x*tileSize,y*tileSize,tileSize,tileSize);
         previewTiles.push({
           index:i,
@@ -1114,7 +1134,7 @@ export default function AdminPage(){
         best.useCount += 1;
         const xNorm = cols <= 1 ? 0.5 : (cell.index % cols) / (cols - 1);
         const yNorm = rows <= 1 ? 0.5 : Math.floor(cell.index / cols) / (rows - 1);
-        const tileCanvas = await createPreviewMosaicTile(best.url, targetUrlLocal, cols, rows, cell.index % cols, Math.floor(cell.index / cols), 220);
+        const tileCanvas = await createPreviewMosaicTile(best.url, targetUrlLocal, cols, rows, cell.index % cols, Math.floor(cell.index / cols), 220, mosaicStyle);
         const x = (cell.index % cols) * cellSize;
         const y = Math.floor(cell.index / cols) * cellSize;
         ctx.drawImage(tileCanvas, x, y, cellSize, cellSize);
@@ -1202,8 +1222,20 @@ export default function AdminPage(){
           <div className="specialPreviewCard"><b>Sfondo home/upload</b>{bgUrl?<img src={bgUrl} alt="Sfondo"/>:<p>Non caricato</p>}</div>
         </div>
 
+        <div className="spacer"/><h2>Stile di composizione del mosaico</h2>
+        <p>Scegli tra i due modi di resa. <b>Ritratto morbido</b> è il più simile all'esempio della donna, con tessere visibili ma più integrate. <b>Tessere evidenti</b> mette più in risalto le singole foto.</p>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:14}}>
+          <button type="button" onClick={()=>setMosaicStyle('portraitOverlay')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicStyle==='portraitOverlay'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicStyle==='portraitOverlay'?'#fff3f4':'#fff', cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Ritratto morbido</div>
+            <div className="small">Più vicino all'esempio della donna. La foto finale emerge bene, ma si leggono ancora le tessere.</div>
+          </button>
+          <button type="button" onClick={()=>setMosaicStyle('classicTiles')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicStyle==='classicTiles'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicStyle==='classicTiles'?'#fff3f4':'#fff', cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Tessere evidenti</div>
+            <div className="small">Stile più a mosaico classico: la singola foto si nota di più e la griglia è più presente.</div>
+          </button>
+        </div>
         <div className="spacer"/><h2>Anteprima risultato finale del mosaico</h2>
-        <p>Da qui puoi vedere prima il risultato finale del tuo fotomosaico. L’anteprima usa la stessa logica di ricolorazione delle tessere: ogni foto viene adattata al colore della propria cella per ricreare l’immagine finale.</p>
+        <p>Da qui puoi vedere prima il risultato finale del tuo fotomosaico. L’anteprima usa lo stile selezionato qui sopra. Quando clicchi una tessera, si apre la <b>foto originale</b> che compone quella cella.</p>
         <div className="gridBtns">
           <button className="btn" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildQuickPreview}>{previewRunning ? 'Creo anteprima rapida...' : 'Anteprima rapida'}</button>
           <button className="btn secondary" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildAdminPreview}>{previewBusy ? 'Creo qualità completa...' : 'Anteprima qualità completa'}</button>
@@ -1292,7 +1324,7 @@ export default function AdminPage(){
               <div style={{width:'fit-content', margin:'0 auto', background:'#111', padding:10, borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
                 <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#0a0a0a'}}>
                   {interactivePreview.tiles.sort((a,b)=>a.index-b.index).map(tile => (
-                    <button key={tile.index} type='button' onClick={()=>openPreviewTileDetail(tile)} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
+                    <button key={tile.index} type='button' onClick={()=>{ setSelectedPreviewTile(tile); setSelectedPreviewDetailUrl(tile.originalUrl); setSelectedPreviewTargetPatchUrl(''); setSelectedPreviewLoading(false); }} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
                       <img src={tile.renderedUrl} alt={`Tessera ${tile.index+1}`} style={{display:'block', width:'100%', height:'100%', objectFit:'cover'}} />
                     </button>
                   ))}
@@ -1302,7 +1334,7 @@ export default function AdminPage(){
             {selectedPreviewTile && (
               <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.72)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>
                 <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={e=>e.stopPropagation()}>
-                  {selectedPreviewLoading && !selectedPreviewDetailUrl ? <div style={{background:'#fffaf4', color:'#4f3c2f', padding:'18px 22px', borderRadius:16}}>Creo immagine tessera...</div> : <img src={selectedPreviewDetailUrl || selectedPreviewTile.renderedUrl} alt='Tessera ingrandita' style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />}
+                  <img src={selectedPreviewTile.originalUrl} alt='Foto originale tessera' style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
                 </div>
               </div>
             )}

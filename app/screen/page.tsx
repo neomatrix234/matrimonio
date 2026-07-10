@@ -32,6 +32,8 @@ type TargetCell = {
   importance:number;
 };
 
+type MosaicRenderStyle = 'portraitOverlay' | 'classicTiles';
+
 type Tile = {
   id:string;
   index:number;
@@ -474,7 +476,7 @@ async function extractExactTargetPatch(targetUrl:string, col:number, row:number,
   return canvas;
 }
 
-async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xNorm:number=0.5, yNorm:number=0.5, targetUrl:string='', col:number=0, row:number=0, cols:number=1, rows:number=1): Promise<string>{
+async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xNorm:number=0.5, yNorm:number=0.5, targetUrl:string='', col:number=0, row:number=0, cols:number=1, rows:number=1, style:MosaicRenderStyle='portraitOverlay'): Promise<string>{
   const img=await loadImg(url);
   const size=PROFESSIONAL_MOSAIC.tileCanvasSize || 190;
   const canvas=document.createElement('canvas');
@@ -537,6 +539,13 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     if(lum>maxLum) maxLum=lum;
   }
   const range=Math.max(0.06, maxLum-minLum);
+  const mode = style === 'classicTiles' ? {
+    wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
+    textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
+  } : {
+    wTargetBase:0.33, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.48,
+    textureSoft:0.08, textureMultiply:0.03, overlaySoft:0.05, overlayColor:0.07, overlaySource:0.02
+  };
 
   for(let i=0;i<d.length;i+=4){
     const sr=d[i], sg=d[i+1], sb=d[i+2];
@@ -553,11 +562,11 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
       const soft=(1-2*B)*(A*A)+2*B*A;
       // Più visibilità alla foto originale: il target colora e guida la forma,
       // ma la tessera originale resta molto più leggibile sotto.
-      const wTarget=0.36 + (1-midMask)*0.06;
-      const wSoft=0.13 + midMask*0.04;
-      const wPhotoLum=0.20 + midMask*0.10;
+      const wTarget=mode.wTargetBase + (1-midMask)*mode.wTargetEdge;
+      const wSoft=mode.wSoft + midMask*0.03;
+      const wPhotoLum=mode.wPhotoLum + midMask*0.06;
       const fused=clamp01(B*wTarget + soft*wSoft + A*wPhotoLum);
-      const keepOriginal=0.42;
+      const keepOriginal=mode.keepOriginal;
       return clamp(Math.round((fused*(1-keepOriginal) + (sourceChannel/255)*keepOriginal)*255));
     };
 
@@ -579,27 +588,27 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     for(let i=0;i<xd.length;i+=4){
       const lum=luminance([xd[i],xd[i+1],xd[i+2]]);
       const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=52;
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=style === 'classicTiles' ? 42 : 48;
     }
     textureCtx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.11;
+    ctx.globalAlpha=mode.textureSoft;
     ctx.drawImage(textureCanvas,0,0,size,size);
     ctx.globalCompositeOperation='multiply';
-    ctx.globalAlpha=0.04;
+    ctx.globalAlpha=mode.textureMultiply;
     ctx.drawImage(textureCanvas,0,0,size,size);
   }
 
   // Overlay della vera immagine target come trasparenza sopra la tessera: 
   // deve vedersi la forma originale della cella, ma restando leggibile la foto sotto.
   ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.07;
+  ctx.globalAlpha=mode.overlaySoft;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalCompositeOperation='color';
-  ctx.globalAlpha=0.12;
+  ctx.globalAlpha=mode.overlayColor;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.03;
+  ctx.globalAlpha=mode.overlaySource;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalAlpha=1;
 
@@ -620,6 +629,7 @@ export default function ScreenPage(){
   const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
   const [targetAspect,setTargetAspect]=useState(1.5);
   const [escapedFullscreen,setEscapedFullscreen]=useState(false);
+  const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -629,6 +639,18 @@ export default function ScreenPage(){
   const targetAspectRef=useRef(1.5);
   const currentTargetUrlRef=useRef('');
   const currentRun=useRef(0);
+
+  useEffect(()=>{
+    if(typeof window==='undefined') return;
+    const saved = window.localStorage.getItem('fm_mosaic_style');
+    if(saved === 'portraitOverlay' || saved === 'classicTiles') setMosaicStyle(saved);
+    const onStorage = () => {
+      const next = window.localStorage.getItem('fm_mosaic_style');
+      if(next === 'portraitOverlay' || next === 'classicTiles') setMosaicStyle(next);
+    };
+    window.addEventListener('storage', onStorage);
+    return ()=>window.removeEventListener('storage', onStorage);
+  }, []);
 
   function targetImageUrl(s:any){
     if(!s?.targetFileId) return '';
@@ -737,7 +759,7 @@ export default function ScreenPage(){
       try{
         const xNorm = cols <= 1 ? 0.5 : (bestCell.index % cols) / (cols - 1);
         const yNorm = rows <= 1 ? 0.5 : Math.floor(bestCell.index / cols) / (rows - 1);
-        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, bestCell.patch, xNorm, yNorm, currentTargetUrlRef.current, bestCell.col, bestCell.row, cols, rows);
+        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, bestCell.patch, xNorm, yNorm, currentTargetUrlRef.current, bestCell.col, bestCell.row, cols, rows, mosaicStyle);
       }catch(e){}
 
       usedIndexes.current.add(bestCell.index);
@@ -1024,7 +1046,7 @@ export default function ScreenPage(){
 
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
         <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>e.stopPropagation()}>
-          <img src={selectedTile.modifiedUrl || selectedTile.url} alt="Tessera" style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
+          <img src={selectedTile.url} alt="Foto originale tessera" style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
         </div>
       </div>}
 
