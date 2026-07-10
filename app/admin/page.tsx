@@ -506,71 +506,6 @@ async function createPreviewMosaicTile(url:string, target:Rgb, size:number, xNor
   return canvas;
 }
 
-async function createTargetDominantPreviewTile(sourceUrl:string, targetUrl:string, cols:number, rows:number, col:number, row:number, size:number=240): Promise<{tileUrl:string; targetPatchUrl:string}>{
-  const [sourceImg, targetImg] = await Promise.all([loadImg(sourceUrl), loadImg(targetUrl)]);
-
-  const patchCanvas=document.createElement('canvas');
-  patchCanvas.width=size; patchCanvas.height=size;
-  const pctx=patchCanvas.getContext('2d', { willReadFrequently:true });
-  if(!pctx) return { tileUrl: sourceUrl, targetPatchUrl: targetUrl };
-
-  const tw = targetImg.naturalWidth || targetImg.width || cols;
-  const th = targetImg.naturalHeight || targetImg.height || rows;
-  const sx = Math.max(0, Math.floor((col / cols) * tw));
-  const sy = Math.max(0, Math.floor((row / rows) * th));
-  const ex = Math.min(tw, Math.ceil(((col + 1) / cols) * tw));
-  const ey = Math.min(th, Math.ceil(((row + 1) / rows) * th));
-  const sw = Math.max(1, ex - sx);
-  const sh = Math.max(1, ey - sy);
-  pctx.drawImage(targetImg, sx, sy, sw, sh, 0, 0, size, size);
-  const targetPatchUrl = patchCanvas.toDataURL('image/jpeg', 0.94);
-
-  const outCanvas=document.createElement('canvas');
-  outCanvas.width=size; outCanvas.height=size;
-  const octx=outCanvas.getContext('2d', { willReadFrequently:true });
-  if(!octx) return { tileUrl: targetPatchUrl, targetPatchUrl };
-  octx.drawImage(patchCanvas,0,0,size,size);
-
-  const srcCanvas=document.createElement('canvas');
-  srcCanvas.width=size; srcCanvas.height=size;
-  const sctx=srcCanvas.getContext('2d', { willReadFrequently:true });
-  if(!sctx) return { tileUrl: targetPatchUrl, targetPatchUrl };
-  const iw=sourceImg.naturalWidth || sourceImg.width, ih=sourceImg.naturalHeight || sourceImg.height;
-  const crop = previewAdaptiveSquareCrop(iw, ih, col / Math.max(1, cols-1), row / Math.max(1, rows-1));
-  sctx.drawImage(sourceImg, crop.sx, crop.sy, crop.side, crop.side, 0, 0, size, size);
-
-  const srcImage=sctx.getImageData(0,0,size,size);
-  const d=srcImage.data;
-  let minLum=1, maxLum=0;
-  for(let i=0;i<d.length;i+=4){
-    const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
-    if(lum<minLum) minLum=lum;
-    if(lum>maxLum) maxLum=lum;
-  }
-  const range=Math.max(0.08, maxLum-minLum);
-  for(let i=0;i<d.length;i+=4){
-    const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
-    const gray=clamp(Math.round(255 * Math.pow(clamp01((lum-minLum)/range), 0.95)));
-    d[i]=gray; d[i+1]=gray; d[i+2]=gray;
-    d[i+3]=58;
-  }
-  sctx.putImageData(srcImage,0,0);
-
-  octx.globalCompositeOperation='multiply';
-  octx.globalAlpha=0.22;
-  octx.drawImage(srcCanvas,0,0,size,size);
-  octx.globalCompositeOperation='soft-light';
-  octx.globalAlpha=0.20;
-  octx.drawImage(srcCanvas,0,0,size,size);
-  octx.globalCompositeOperation='source-over';
-  octx.globalAlpha=0.12;
-  octx.drawImage(srcCanvas,0,0,size,size);
-  octx.globalAlpha=1;
-
-  return { tileUrl: outCanvas.toDataURL('image/jpeg', 0.94), targetPatchUrl };
-}
-
-
 
 export default function AdminPage(){
   const [logged,setLogged]=useState(false);
@@ -616,9 +551,6 @@ export default function AdminPage(){
   const [interactivePreview,setInteractivePreview]=useState<{title:string; tiles:PreviewTileData[]; cols:number; rows:number; cellSize:number}|null>(null);
   const [interactivePreviewZoom,setInteractivePreviewZoom]=useState(2);
   const [selectedPreviewTile,setSelectedPreviewTile]=useState<PreviewTileData|null>(null);
-  const [selectedPreviewDetailUrl,setSelectedPreviewDetailUrl]=useState('');
-  const [selectedPreviewTargetPatchUrl,setSelectedPreviewTargetPatchUrl]=useState('');
-  const [selectedPreviewLoading,setSelectedPreviewLoading]=useState(false);
 
   useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
 
@@ -867,27 +799,7 @@ export default function AdminPage(){
   }
   function closeInteractivePreview(){
     setSelectedPreviewTile(null);
-    setSelectedPreviewDetailUrl('');
-    setSelectedPreviewTargetPatchUrl('');
     setInteractivePreview(null);
-  }
-  async function openPreviewTileDetail(tile:PreviewTileData){
-    if(!interactivePreview || !data?.targetFileId) return;
-    const targetUrlNow = `/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`;
-    setSelectedPreviewTile(tile);
-    setSelectedPreviewDetailUrl('');
-    setSelectedPreviewTargetPatchUrl('');
-    setSelectedPreviewLoading(true);
-    try{
-      const detail = await createTargetDominantPreviewTile(tile.originalUrl, targetUrlNow, interactivePreview.cols, interactivePreview.rows, tile.col, tile.row, 260);
-      setSelectedPreviewDetailUrl(detail.tileUrl);
-      setSelectedPreviewTargetPatchUrl(detail.targetPatchUrl);
-    }catch(e){
-      setSelectedPreviewDetailUrl(tile.renderedUrl);
-      setSelectedPreviewTargetPatchUrl('');
-    }finally{
-      setSelectedPreviewLoading(false);
-    }
   }
 
   async function buildQuickPreview(){
@@ -1244,7 +1156,7 @@ export default function AdminPage(){
               <div style={{width:'fit-content', margin:'0 auto', background:'#111', padding:10, borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
                 <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#000'}}>
                   {interactivePreview.tiles.sort((a,b)=>a.index-b.index).map(tile => (
-                    <button key={tile.index} type='button' onClick={()=>openPreviewTileDetail(tile)} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
+                    <button key={tile.index} type='button' onClick={()=>setSelectedPreviewTile(tile)} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
                       <img src={tile.renderedUrl} alt={`Tessera ${tile.index+1}`} style={{display:'block', width:'100%', height:'100%', objectFit:'cover'}} />
                     </button>
                   ))}
@@ -1252,20 +1164,20 @@ export default function AdminPage(){
               </div>
             </div>
             {selectedPreviewTile && (
-              <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.62)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>
+              <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.62)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>setSelectedPreviewTile(null)}>
                 <div style={{width:'min(95vw, 900px)', maxHeight:'92vh', overflow:'auto', background:'#fffaf4', color:'#4f3c2f', borderRadius:24, padding:18, boxShadow:'0 30px 80px rgba(0,0,0,.38)'}} onClick={e=>e.stopPropagation()}>
                   <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:10}}>
                     <div>
                       <div style={{fontWeight:800, fontSize:22}}>Dettaglio tessera</div>
                       <div style={{fontSize:14}}>Riga {selectedPreviewTile.row+1} — Colonna {selectedPreviewTile.col+1} — Indice {selectedPreviewTile.index+1}</div>
                     </div>
-                    <button className='btn danger' type='button' onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>Chiudi</button>
+                    <button className='btn danger' type='button' onClick={()=>setSelectedPreviewTile(null)}>Chiudi</button>
                   </div>
                   <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:16, alignItems:'start'}}>
                     <div>
                       <b>Come viene nel mosaico</b>
                       <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
-                        {selectedPreviewLoading && !selectedPreviewDetailUrl ? <div className='small' style={{padding:'28px 12px'}}>Creo dettaglio reale della tessera...</div> : <img src={selectedPreviewDetailUrl || selectedPreviewTile.renderedUrl} alt='Tessera renderizzata' style={{display:'block', width:'100%'}} />}
+                        <img src={selectedPreviewTile.renderedUrl} alt='Tessera renderizzata' style={{display:'block', width:'100%', imageRendering:'pixelated'}} />
                       </div>
                     </div>
                     <div>
@@ -1275,11 +1187,9 @@ export default function AdminPage(){
                       </div>
                     </div>
                     <div>
-                      <b>Porzione immagine target della cella</b>
-                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
-                        {selectedPreviewLoading && !selectedPreviewTargetPatchUrl ? <div className='small' style={{padding:'28px 12px'}}>Estraggo la porzione reale dell'immagine target...</div> : selectedPreviewTargetPatchUrl ? <img src={selectedPreviewTargetPatchUrl} alt='Patch target della cella' style={{display:'block', width:'100%'}} /> : <div style={{height:120, background:`rgb(${selectedPreviewTile.targetColor[0]}, ${selectedPreviewTile.targetColor[1]}, ${selectedPreviewTile.targetColor[2]})`}} />}
-                      </div>
-                      <div className='small' style={{marginTop:8}}>RGB medio cella: {selectedPreviewTile.targetColor.join(', ')}</div>
+                      <b>Colore target della cella</b>
+                      <div style={{marginTop:8, height:120, borderRadius:16, border:'1px solid rgba(0,0,0,.08)', background:`rgb(${selectedPreviewTile.targetColor[0]}, ${selectedPreviewTile.targetColor[1]}, ${selectedPreviewTile.targetColor[2]})`}} />
+                      <div className='small' style={{marginTop:8}}>RGB: {selectedPreviewTile.targetColor.join(', ')}</div>
                     </div>
                   </div>
                 </div>

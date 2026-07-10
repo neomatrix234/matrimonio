@@ -461,108 +461,24 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const ih=img.naturalHeight || img.height;
   const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
 
-  // PATCH LOCALE COME BASE ASSOLUTA:
-  // la porzione dell'immagine originale da ricostruire deve essere la parte prevalente della tessera.
-  const patchCanvas=document.createElement('canvas');
-  const ps=PROFESSIONAL_MOSAIC.patchSize;
-  patchCanvas.width=ps;
-  patchCanvas.height=ps;
-  const pctx=patchCanvas.getContext('2d');
-  if(pctx){
-    const pimg=pctx.createImageData(ps,ps);
-    for(let i=0;i<ps*ps;i++){
-      const off=i*4;
-      const rgb=(targetPatch && targetPatch[i]) ? targetPatch[i] : target;
-      pimg.data[off]=rgb[0];
-      pimg.data[off+1]=rgb[1];
-      pimg.data[off+2]=rgb[2];
-      pimg.data[off+3]=255;
-    }
-    pctx.putImageData(pimg,0,0);
-  }
-  ctx.imageSmoothingEnabled=true;
-  ctx.drawImage(patchCanvas,0,0,size,size);
+  // LA FOTO OSPITE E' LA BASE DELLA TESSERA: deve restare sempre riconoscibile.
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, size, size);
 
-  // prepara la foto ospite come TEXTURE sottostante, non come immagine dominante.
-  const srcCanvas=document.createElement('canvas');
-  srcCanvas.width=size;
-  srcCanvas.height=size;
-  const sctx=srcCanvas.getContext('2d', { willReadFrequently:true });
-  if(!sctx) return canvas.toDataURL('image/jpeg', .91);
-  sctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
+  // Leggerissima correzione cromatica verso il colore medio della cella target:
+  // serve solo a far "quadrare" i colori del mosaico visto da lontano,
+  // senza mai cancellare o appiattire la foto reale.
+  const tintOpacity = PROFESSIONAL_MOSAIC.tintOpacity; // es. 0.12
 
-  const srcImage=sctx.getImageData(0,0,size,size);
-  const d=srcImage.data;
-  let minLum=1, maxLum=0;
-  for(let i=0;i<d.length;i+=4){
-    const lum=luminance([d[i],d[i+1],d[i+2]]);
-    if(lum<minLum) minLum=lum;
-    if(lum>maxLum) maxLum=lum;
-  }
-  const range=Math.max(0.06, maxLum-minLum);
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = tintOpacity;
+  ctx.fillStyle = `rgb(${target[0]}, ${target[1]}, ${target[2]})`;
+  ctx.fillRect(0, 0, size, size);
 
-  for(let i=0;i<d.length;i+=4){
-    const pixelIndex=i/4;
-    const px=pixelIndex%size;
-    const py=Math.floor(pixelIndex/size);
-    const nx = size <= 1 ? 0.5 : px/(size-1);
-    const ny = size <= 1 ? 0.5 : py/(size-1);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
 
-    const localTarget = patchColorAt(targetPatch, nx, ny, target);
-    const edgeStrength = patchEdgeAt(targetPatch, nx, ny);
-    const srcLum=luminance([d[i],d[i+1],d[i+2]]);
-    const srcNorm=clamp01((srcLum-minLum)/range);
-
-    // riduco la foto a texture grigia per non contaminare i colori del target.
-    const gray = clamp(Math.round(255 * Math.pow(srcNorm, 0.94)));
-    d[i]=gray; d[i+1]=gray; d[i+2]=gray;
-
-    // la texture incide meno nelle zone con dettagli forti del target.
-    let alpha = 72 - Math.round(edgeStrength * 40);
-    const tlum = luminance(localTarget);
-    if(tlum < 0.11 || tlum > 0.89) alpha = Math.min(alpha, 28);
-    d[i+3]=clamp(alpha, 18, 78);
-  }
-
-  // lieve nitidezza della texture foto
-  const base = new Uint8ClampedArray(d);
-  const stride = size * 4;
-  const sharpen = 0.15;
-  for(let y=1;y<size-1;y++){
-    for(let x=1;x<size-1;x++){
-      const idx = y*stride + x*4;
-      for(let c=0;c<3;c++){
-        const blur = (base[idx-4+c] + base[idx+4+c] + base[idx-stride+c] + base[idx+stride+c]) / 4;
-        d[idx+c] = clamp(Math.round(base[idx+c] + (base[idx+c] - blur) * sharpen));
-      }
-    }
-  }
-  sctx.putImageData(srcImage,0,0);
-
-  // target prevalente + foto come trama secondaria
-  ctx.globalCompositeOperation='multiply';
-  ctx.globalAlpha=0.22;
-  ctx.drawImage(srcCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.24;
-  ctx.drawImage(srcCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.05;
-  ctx.drawImage(srcCanvas,0,0,size,size);
-
-  // ritorno finale della patch target sopra la texture,
-  // così nella tessera prevale sempre la porzione dell'immagine da ricreare.
-  ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.26;
-  ctx.drawImage(patchCanvas,0,0,size,size);
-  ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.16;
-  ctx.drawImage(patchCanvas,0,0,size,size);
-  ctx.globalAlpha=1;
-
-  return canvas.toDataURL('image/jpeg', .91);
+  return canvas.toDataURL('image/jpeg', .92);
 }
 
 
@@ -896,7 +812,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore target-dominant: patch matching + LAB/CIEDE2000 · la porzione target prevale dentro ogni tessera' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore foto-dominante: matching LAB/CIEDE2000 · ogni tessera resta la foto reale, con leggera correzione colore' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
