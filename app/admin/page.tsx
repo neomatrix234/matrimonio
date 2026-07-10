@@ -806,6 +806,8 @@ export default function AdminPage(){
     setErr('');
     setPreviewRunning(true);
     setPreviewFastUrl('');
+    setPreviewFastTiles([]);
+    setPreviewFastMeta(null);
     setPreviewText('Preparo anteprima istantanea...');
     try{
       if(!data?.targetFileId) throw new Error('Carica prima la foto finale.');
@@ -816,6 +818,8 @@ export default function AdminPage(){
       const aspect=await qImageAspect(targetUrlLocal);
       const {cols,rows}=qGrid(total,aspect);
       const tileSize = total >= 1800 ? 14 : total >= 1000 ? 15 : 16;
+      setPreviewFastMeta({cols,rows,cellSize:tileSize});
+      const previewTiles:PreviewTileData[]=[];
       const canvas=document.createElement('canvas');
       canvas.width=cols*tileSize;
       canvas.height=rows*tileSize;
@@ -859,7 +863,22 @@ export default function AdminPage(){
         }
         best.use++;
         assigned.set(i,best.id);
-        qDrawFastTile(ctx,best.img,target,x*tileSize,y*tileSize,tileSize,cols<=1?.5:x/(cols-1),rows<=1?.5:y/(rows-1));
+        const tileCanvas=document.createElement('canvas');
+        tileCanvas.width=tileSize;
+        tileCanvas.height=tileSize;
+        const tileCtx=tileCanvas.getContext('2d');
+        if(tileCtx){
+          qDrawFastTile(tileCtx,best.img,target,0,0,tileSize,cols<=1?.5:x/(cols-1),rows<=1?.5:y/(rows-1));
+          ctx.drawImage(tileCanvas,x*tileSize,y*tileSize,tileSize,tileSize);
+          previewTiles.push({
+            index:i,
+            row:y,
+            col:x,
+            originalUrl:best.url,
+            renderedUrl:tileCanvas.toDataURL('image/jpeg',0.90),
+            targetColor:[target[0],target[1],target[2]] as Rgb
+          });
+        }
         if(i>0 && i%120===0){
           setPreviewFastUrl(canvas.toDataURL('image/jpeg',.80));
           await new Promise(r=>setTimeout(r,0));
@@ -898,6 +917,9 @@ export default function AdminPage(){
   async function buildAdminPreview(){
     setErr('');
     setPreviewBusy(true);
+    setPreviewUrl('');
+    setPreviewFullTiles([]);
+    setPreviewFullMeta(null);
     setPreviewProgress('Preparo anteprima...');
     try{
       if(!data?.targetFileId) throw new Error('Carica prima la foto finale da riprodurre.');
@@ -909,6 +931,8 @@ export default function AdminPage(){
       const targetUrlLocal = `/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`;
       const aspect = await previewImageAspect(targetUrlLocal);
       const {cols,rows} = gridForTotal(total, aspect);
+      setPreviewFullMeta({cols,rows,cellSize});
+      const previewTiles:PreviewTileData[]=[];
       const cells = await previewTargetCells(targetUrlLocal, cols, rows);
       const sortedCells = cells.slice().sort((a,b)=>b.importance-a.importance);
 
