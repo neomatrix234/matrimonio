@@ -26,16 +26,28 @@ function qLoadImg(url:string): Promise<HTMLImageElement>{ return new Promise((re
 function qMix(a:number,b:number,t:number){ return a+(b-a)*t; }
 function qMixRgb(a:number[],b:number[],t:number){ return [Math.round(qMix(a[0],b[0],t)),Math.round(qMix(a[1],b[1],t)),Math.round(qMix(a[2],b[2],t))]; }
 function qGrid(total:number, aspect:number=1.5){
-  // L’anteprima rapida non deve ricostruire tutte le 600–3000 tessere reali.
-  // Usa una griglia leggera, proporzionata alla foto finale, sufficiente per
-  // verificare immediatamente leggibilità, colori e resa generale.
+  // Prima era troppo povera (es. 20×15 = 300 tessere simulate su un mosaico da 1000),
+  // quindi il soggetto risultava poco leggibile. Ora la rapida usa molte più tessere,
+  // ma resta molto più veloce del render completo.
   const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
-  const previewTotal = Math.max(96, Math.min(300, Math.round(Math.sqrt(Math.max(1,total))*10)));
+  let previewTotal = 0;
+  if(total <= 600) previewTotal = Math.round(total * 0.72);
+  else if(total <= 1000) previewTotal = Math.round(total * 0.62);
+  else if(total <= 1500) previewTotal = Math.round(total * 0.52);
+  else if(total <= 2500) previewTotal = Math.round(total * 0.42);
+  else previewTotal = Math.round(total * 0.34);
+  previewTotal = Math.max(180, Math.min(900, previewTotal));
+
   let bestCols = Math.max(1, Math.round(Math.sqrt(previewTotal * safeAspect)));
   let bestRows = Math.max(1, Math.round(previewTotal / bestCols));
-  while(bestCols * bestRows > 320){
+  while(bestCols * bestRows > 920){
     if(bestCols >= bestRows) bestCols--;
     else bestRows--;
+  }
+  while(bestCols * bestRows < Math.max(140, previewTotal - Math.max(8, Math.round(bestCols * 0.4)))){
+    if((bestCols / Math.max(1,bestRows)) < safeAspect) bestCols++;
+    else bestRows++;
+    if(bestCols * bestRows > 920) break;
   }
   return {cols:bestCols, rows:bestRows};
 }
@@ -58,6 +70,23 @@ async function qTargetColors(url:string, cols:number, rows:number){
   ctx.drawImage(img,0,0,w,h); const d=ctx.getImageData(0,0,w,h).data; const out:any[]=[];
   for(let cy=0;cy<rows;cy++){ for(let cx=0;cx<cols;cx++){ let r=0,g=0,b=0,n=0; for(let yy=0;yy<factor;yy++){ for(let xx=0;xx<factor;xx++){ const p=((cy*factor+yy)*w+(cx*factor+xx))*4; r+=qSrgbToLinear(d[p]); g+=qSrgbToLinear(d[p+1]); b+=qSrgbToLinear(d[p+2]); n++; }} out.push([qLinearToSrgb(r/n),qLinearToSrgb(g/n),qLinearToSrgb(b/n)]); }}
   return out;
+}
+function qEnhanceReference(ctx:CanvasRenderingContext2D, w:number, h:number){
+  const img=ctx.getImageData(0,0,w,h);
+  const d=img.data;
+  const contrast=1.12;
+  const saturation=1.08;
+  for(let i=0;i<d.length;i+=4){
+    let r=d[i], g=d[i+1], b=d[i+2];
+    const gray=0.299*r+0.587*g+0.114*b;
+    r=gray+(r-gray)*saturation;
+    g=gray+(g-gray)*saturation;
+    b=gray+(b-gray)*saturation;
+    d[i]=qClamp((r-128)*contrast+128);
+    d[i+1]=qClamp((g-128)*contrast+128);
+    d[i+2]=qClamp((b-128)*contrast+128);
+  }
+  ctx.putImageData(img,0,0);
 }
 function qDist(a:number[],b:number[]){ return (a[0]-b[0])**2*.30+(a[1]-b[1])**2*.58+(a[2]-b[2])**2*.22+(qLum(a)*255-qLum(b)*255)**2*.65; }
 function qDrawFastTile(ctx:CanvasRenderingContext2D,img:HTMLImageElement,target:number[],x:number,y:number,size:number,xNorm:number=0.5,yNorm:number=0.5){
@@ -538,7 +567,7 @@ export default function AdminPage(){
       const targetUrlLocal=`/api/image?id=${data.targetFileId}&v=${data?.target?.updated||Date.now()}`;
       const aspect=await qImageAspect(targetUrlLocal);
       const {cols,rows}=qGrid(total,aspect);
-      const tileSize=18;
+      const tileSize = total >= 1800 ? 14 : total >= 1000 ? 15 : 16;
       const canvas=document.createElement('canvas');
       canvas.width=cols*tileSize;
       canvas.height=rows*tileSize;
@@ -547,7 +576,7 @@ export default function AdminPage(){
       ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
       const targetColors=await qTargetColors(targetUrlLocal,cols,rows);
-      const maxPhotos=Math.min(photos.length,180);
+      const maxPhotos=Math.min(photos.length,320);
       setPreviewText(`Carico miniature 0 / ${maxPhotos}...`);
 
       // Caricamento concorrente e una sola decodifica per foto. In precedenza
@@ -571,28 +600,44 @@ export default function AdminPage(){
         const x=i%cols, y=Math.floor(i/cols);
         let best=features[0], bestScore=Number.POSITIVE_INFINITY;
         for(const f of features){
-          let score=qDist(f.avg,target)+f.use*f.use*95;
+          let score=qDist(f.avg,target)+f.use*f.use*80;
           const left=assigned.get(i-1), up=assigned.get(i-cols);
+          const left2=assigned.get(i-2), up2=assigned.get(i-cols*2);
           if(left===f.id) score+=28000;
           if(up===f.id) score+=28000;
+          if(left2===f.id) score+=9000;
+          if(up2===f.id) score+=9000;
           if(score<bestScore){bestScore=score;best=f;}
         }
         best.use++;
         assigned.set(i,best.id);
         qDrawFastTile(ctx,best.img,target,x*tileSize,y*tileSize,tileSize,cols<=1?.5:x/(cols-1),rows<=1?.5:y/(rows-1));
-        if(i>0 && i%80===0){
-          setPreviewFastUrl(canvas.toDataURL('image/jpeg',.78));
+        if(i>0 && i%120===0){
+          setPreviewFastUrl(canvas.toDataURL('image/jpeg',.80));
           await new Promise(r=>setTimeout(r,0));
         }
       }
 
       const targetImg=await qLoadImg(targetUrlLocal);
-      ctx.save();
-      ctx.globalAlpha=.10;
-      ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
-      ctx.restore();
-      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.88));
-      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Il mosaico reale resta impostato a ${total} tessere.`);
+      const refCanvas=document.createElement('canvas');
+      refCanvas.width=canvas.width;
+      refCanvas.height=canvas.height;
+      const refCtx=refCanvas.getContext('2d',{willReadFrequently:true});
+      if(refCtx){
+        refCtx.drawImage(targetImg,0,0,refCanvas.width,refCanvas.height);
+        qEnhanceReference(refCtx, refCanvas.width, refCanvas.height);
+        ctx.save();
+        ctx.globalAlpha = total >= 1500 ? 0.18 : 0.22;
+        ctx.drawImage(refCanvas,0,0,canvas.width,canvas.height);
+        ctx.restore();
+      }else{
+        ctx.save();
+        ctx.globalAlpha=.18;
+        ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
+        ctx.restore();
+      }
+      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.90));
+      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Ora è più leggibile, ma il mosaico reale resta impostato a ${total} tessere.`);
       showAdminMsg('Anteprima rapida pronta.');
     }catch(e:any){
       setErr(e?.message||'Errore anteprima rapida');
