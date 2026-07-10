@@ -426,3 +426,5 @@ Dal progetto MacOSaiX allegato non è stato copiato codice Objective-C: il sorge
 - il matching usa LAB/CIEDE2000 + somiglianza della struttura luminosa;
 - la tessera viene ricolorata usando anche il dettaglio locale della cella, non solo il colore medio;
 - resta il riuso controllato e l'anti-vicinanza per evitare macchie piatte.
+
+# Vercel: rigenerare package-lock da registry pubblico
