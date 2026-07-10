@@ -506,22 +506,24 @@ async function createPreviewMosaicTile(
   for(let i=0;i<d.length;i+=4){
     const srcLum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
     const A=clamp01((srcLum-minLum)/range);
+    const sr=d[i], sg=d[i+1], sb=d[i+2];
     const tr=td[i],tg=td[i+1],tb=td[i+2];
     const targetLum=(0.2126*tr+0.7152*tg+0.0722*tb)/255;
     const midMask=clamp01(4*targetLum*(1-targetLum));
-    const textureFactor=clamp01(0.84+(A-0.5)*0.30);
-    const blend=(tc:number)=>{
+    const blend=(tc:number, sc:number)=>{
       const B=tc/255;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      const wTarget=0.86+(1-midMask)*0.08;
-      const wSoft=0.10*midMask+0.035;
-      const wPhoto=0.025*midMask;
-      return clamp(Math.round((B*textureFactor*wTarget+soft*wSoft+A*wPhoto)*255));
+      const wTarget=0.66+(1-midMask)*0.12;
+      const wSoft=0.15+midMask*0.05;
+      const wPhotoLum=0.07+midMask*0.08;
+      const fused=clamp01(B*wTarget+soft*wSoft+A*wPhotoLum);
+      const keepOriginal=0.14;
+      return clamp(Math.round((fused*(1-keepOriginal)+(sc/255)*keepOriginal)*255));
     };
-    d[i]=blend(tr); d[i+1]=blend(tg); d[i+2]=blend(tb); d[i+3]=255;
+    d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
   }
   ctx.putImageData(source,0,0);
-  ctx.globalAlpha=0.18;
+  ctx.globalAlpha=0.06;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalAlpha=1;
   return canvas;
@@ -643,6 +645,21 @@ export default function AdminPage(){
   const [selectedPreviewLoading,setSelectedPreviewLoading]=useState(false);
 
   useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
+
+  useEffect(()=>{
+    const onEscape=(e:KeyboardEvent)=>{
+      if(e.key!=='Escape') return;
+      if(selectedPreviewTile){
+        setSelectedPreviewTile(null);
+        setSelectedPreviewDetailUrl('');
+        setSelectedPreviewTargetPatchUrl('');
+        return;
+      }
+      if(interactivePreview) closeInteractivePreview();
+    };
+    window.addEventListener('keydown',onEscape);
+    return ()=>window.removeEventListener('keydown',onEscape);
+  },[interactivePreview,selectedPreviewTile]);
 
   useEffect(()=>{
     const p=sessionStorage.getItem('fm_admin_password');
@@ -1227,7 +1244,7 @@ export default function AdminPage(){
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
 
         {interactivePreview && (
-          <div style={{position:'fixed', inset:0, zIndex:80, background:'rgba(10,8,6,.92)', display:'flex', flexDirection:'column'}}>
+          <div style={{position:'fixed', inset:0, zIndex:80, background:'#000', display:'flex', flexDirection:'column'}}>
             <div style={{display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderBottom:'1px solid rgba(255,255,255,.12)', color:'#fff', flexWrap:'wrap'}}>
               <div style={{fontWeight:800, fontSize:20}}>{interactivePreview.title}</div>
               <div style={{fontSize:13, opacity:.88}}>Griglia {interactivePreview.cols}×{interactivePreview.rows} — clicca una tessera per vedere il dettaglio.</div>

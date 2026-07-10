@@ -546,22 +546,24 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     const gray=srcNorm;
     const targetLum=luminance([tr,tg,tb]);
     const midMask=clamp01(4*targetLum*(1-targetLum));
-    const textureFactor=clamp01(0.84 + (srcNorm-0.5)*0.30);
 
-    const blendChannel=(targetChannel:number)=>{
+    const blendChannel=(targetChannel:number, sourceChannel:number)=>{
       const B=targetChannel/255;
       const A=gray;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      const dominant=B*textureFactor;
-      const wTarget=0.86 + (1-midMask)*0.08;
-      const wSoft=0.10*midMask + 0.035;
-      const wPhoto=0.025*midMask;
-      return clamp(Math.round((dominant*wTarget + soft*wSoft + A*wPhoto)*255));
+      // Meno aggressivo: il target continua a guidare la cella,
+      // ma la fotografia della tessera resta più riconoscibile.
+      const wTarget=0.66 + (1-midMask)*0.12;
+      const wSoft=0.15 + midMask*0.05;
+      const wPhotoLum=0.07 + midMask*0.08;
+      const fused=clamp01(B*wTarget + soft*wSoft + A*wPhotoLum);
+      const keepOriginal=0.14;
+      return clamp(Math.round((fused*(1-keepOriginal) + (sourceChannel/255)*keepOriginal)*255));
     };
 
-    d[i]=blendChannel(tr);
-    d[i+1]=blendChannel(tg);
-    d[i+2]=blendChannel(tb);
+    d[i]=blendChannel(tr,sr);
+    d[i+1]=blendChannel(tg,sg);
+    d[i+2]=blendChannel(tb,sb);
   }
   ctx.putImageData(sourceImage,0,0);
 
@@ -581,13 +583,13 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     }
     textureCtx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.05;
+    ctx.globalAlpha=0.12;
     ctx.drawImage(textureCanvas,0,0,size,size);
   }
 
   // Ultimo richiamo della vera patch target sopra la tessera.
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.18;
+  ctx.globalAlpha=0.06;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalAlpha=1;
 
@@ -607,6 +609,7 @@ export default function ScreenPage(){
   const [paused,setPaused]=useState(false);
   const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
   const [targetAspect,setTargetAspect]=useState(1.5);
+  const [escapedFullscreen,setEscapedFullscreen]=useState(false);
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -902,13 +905,36 @@ export default function ScreenPage(){
   useEffect(()=>{
     fetchStatus();
     const id=setInterval(fetchStatus,9000);
-    const fs=()=>setIsFullscreen(Boolean(document.fullscreenElement));
+    let wasFullscreen=Boolean(document.fullscreenElement);
+    const fs=()=>{
+      const nowFullscreen=Boolean(document.fullscreenElement);
+      setIsFullscreen(nowFullscreen);
+      if(wasFullscreen && !nowFullscreen){
+        // Primo ESC: esce dal pieno schermo e resta sulla pagina mosaico.
+        setEscapedFullscreen(true);
+      }
+      if(nowFullscreen) setEscapedFullscreen(false);
+      wasFullscreen=nowFullscreen;
+    };
+    const onKeyDown=(e:KeyboardEvent)=>{
+      if(e.key !== 'Escape') return;
+      if(document.fullscreenElement) return; // il browser gestisce il primo ESC
+      if(selectedTile){
+        setSelectedTile(null);
+        return;
+      }
+      if(escapedFullscreen){
+        window.location.href='/admin';
+      }
+    };
     document.addEventListener('fullscreenchange',fs);
+    window.addEventListener('keydown',onKeyDown);
     return ()=>{
       clearInterval(id);
       document.removeEventListener('fullscreenchange',fs);
+      window.removeEventListener('keydown',onKeyDown);
     };
-  },[replayStarted,final,paused]);
+  },[replayStarted,final,paused,escapedFullscreen,selectedTile]);
 
   const total=status?.totalTiles || 600;
   const {cols,rows}=gridForTotal(total, targetAspect);
@@ -957,14 +983,6 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
-          {targetUrl && count>0 && !final && <img className="mosaicSoftReferenceOverlay" src={targetUrl} alt="" style={{
-            position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
-            opacity:.04, mixBlendMode:'normal', pointerEvents:'none', zIndex:2
-          }}/>}
-          {targetUrl && <img src={targetUrl} alt="" style={{
-            position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
-            opacity:final?1:0,transition:'opacity 3s ease',zIndex:3
-          }}/>}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
@@ -989,7 +1007,7 @@ export default function ScreenPage(){
 
       {!isFullscreen && <div className="screenBottomControls">
         <button onClick={()=>startReplay(total)}>Replay finale</button>
-        <button onClick={()=>document.documentElement.requestFullscreen()}>Schermo intero</button>
+        <button onClick={()=>{setEscapedFullscreen(false); document.documentElement.requestFullscreen();}}>Schermo intero</button>
         <button className="danger" onClick={stopMosaic}>Interrompi</button>
         <button onClick={restartMosaic}>Riparti</button>
       </div>}
