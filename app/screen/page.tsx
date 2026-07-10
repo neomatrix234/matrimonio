@@ -20,6 +20,8 @@ type PhotoFeature = {
 
 type TargetCell = {
   index:number;
+  row:number;
+  col:number;
   color:Rgb;
   lab:Lab;
   lum:number;
@@ -333,14 +335,18 @@ function photoCellScore(photo:PhotoFeature, cell:TargetCell, maxReuse:number){
   return de*de + labFast + lum + sat + contrast + pattern + reusePenalty + overPenalty;
 }
 
+const imagePromiseCache = new Map<string, Promise<HTMLImageElement>>();
 function loadImg(url:string): Promise<HTMLImageElement>{
-  return new Promise((resolve,reject)=>{
+  if(imagePromiseCache.has(url)) return imagePromiseCache.get(url)!;
+  const promise = new Promise<HTMLImageElement>((resolve,reject)=>{
     const img=new Image();
     img.crossOrigin='anonymous';
     img.onload=()=>resolve(img);
     img.onerror=reject;
     img.src=url;
   });
+  imagePromiseCache.set(url, promise);
+  return promise;
 }
 
 async function photoFeature(url:string, id:string): Promise<PhotoFeature>{
@@ -430,7 +436,7 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
       const sat=saturation(color);
       const contrast=patchContrast(patchLum);
       const index=cy*cols+cx;
-      cells.push({index,color,lab:rgbToLab(color),lum,sat,patch,patchLum,contrast,importance:0});
+      cells.push({index,row:cy,col:cx,color,lab:rgbToLab(color),lum,sat,patch,patchLum,contrast,importance:0});
     }
   }
 
@@ -448,7 +454,27 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
   });
 }
 
-async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xNorm:number=0.5, yNorm:number=0.5): Promise<string>{
+async function extractExactTargetPatch(targetUrl:string, col:number, row:number, cols:number, rows:number, size:number): Promise<HTMLCanvasElement>{
+  const img = await loadImg(targetUrl);
+  const canvas=document.createElement('canvas');
+  canvas.width=size;
+  canvas.height=size;
+  const ctx=canvas.getContext('2d', { willReadFrequently:true });
+  if(!ctx) return canvas;
+  const tw = img.naturalWidth || img.width || cols;
+  const th = img.naturalHeight || img.height || rows;
+  const sx = Math.max(0, Math.floor((col / cols) * tw));
+  const sy = Math.max(0, Math.floor((row / rows) * th));
+  const ex = Math.min(tw, Math.ceil(((col + 1) / cols) * tw));
+  const ey = Math.min(th, Math.ceil(((row + 1) / rows) * th));
+  const sw = Math.max(1, ex - sx);
+  const sh = Math.max(1, ey - sy);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+  return canvas;
+}
+
+async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xNorm:number=0.5, yNorm:number=0.5, targetUrl:string='', col:number=0, row:number=0, cols:number=1, rows:number=1): Promise<string>{
   const img=await loadImg(url);
   const size=PROFESSIONAL_MOSAIC.tileCanvasSize || 190;
   const canvas=document.createElement('canvas');
@@ -461,22 +487,109 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const ih=img.naturalHeight || img.height;
   const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
 
-  // LA FOTO OSPITE E' LA BASE DELLA TESSERA: deve restare sempre riconoscibile.
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, size, size);
+  // Base reale: la foto tessera originale resta visibile.
+  ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
-  // Leggerissima correzione cromatica verso il colore medio della cella target:
-  // serve solo a far "quadrare" i colori del mosaico visto da lontano,
-  // senza mai cancellare o appiattire la foto reale.
-  const tintOpacity = PROFESSIONAL_MOSAIC.tintOpacity; // es. 0.12
+  // Estrai la vera porzione dell'immagine target per questa cella.
+  let targetCanvas:HTMLCanvasElement | null = null;
+  try{
+    if(targetUrl) targetCanvas = await extractExactTargetPatch(targetUrl, col, row, cols, rows, size);
+  }catch(e){ targetCanvas = null; }
 
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = tintOpacity;
-  ctx.fillStyle = `rgb(${target[0]}, ${target[1]}, ${target[2]})`;
-  ctx.fillRect(0, 0, size, size);
+  // Fallback se non disponibile: ricostruisci una patch liscia dalla patch calcolata.
+  if(!targetCanvas){
+    targetCanvas=document.createElement('canvas');
+    targetCanvas.width=size;
+    targetCanvas.height=size;
+    const ps=PROFESSIONAL_MOSAIC.patchSize;
+    const psmall=document.createElement('canvas');
+    psmall.width=ps; psmall.height=ps;
+    const pctx=psmall.getContext('2d');
+    const tctx=targetCanvas.getContext('2d');
+    if(pctx && tctx){
+      const pimg=pctx.createImageData(ps,ps);
+      for(let i=0;i<ps*ps;i++){
+        const off=i*4;
+        const rgb=(targetPatch && targetPatch[i]) ? targetPatch[i] : target;
+        pimg.data[off]=rgb[0];
+        pimg.data[off+1]=rgb[1];
+        pimg.data[off+2]=rgb[2];
+        pimg.data[off+3]=255;
+      }
+      pctx.putImageData(pimg,0,0);
+      tctx.imageSmoothingEnabled=true;
+      tctx.drawImage(psmall,0,0,size,size);
+    }
+  }
 
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1;
+  const targetCtx=targetCanvas.getContext('2d', { willReadFrequently:true });
+  if(!targetCtx) return canvas.toDataURL('image/jpeg', .92);
+  const targetImage=targetCtx.getImageData(0,0,size,size);
+  const tdata=targetImage.data;
+
+  const sourceImage=ctx.getImageData(0,0,size,size);
+  const d=sourceImage.data;
+
+  let minLum=1, maxLum=0;
+  for(let i=0;i<d.length;i+=4){
+    const lum=luminance([d[i],d[i+1],d[i+2]]);
+    if(lum<minLum) minLum=lum;
+    if(lum>maxLum) maxLum=lum;
+  }
+  const range=Math.max(0.06, maxLum-minLum);
+
+  for(let i=0;i<d.length;i+=4){
+    const sr=d[i], sg=d[i+1], sb=d[i+2];
+    const tr=tdata[i], tg=tdata[i+1], tb=tdata[i+2];
+    const srcLum=luminance([sr,sg,sb]);
+    const srcNorm=clamp01((srcLum-minLum)/range);
+    const gray=srcNorm;
+    const targetLum=luminance([tr,tg,tb]);
+    const midMask=clamp01(4*targetLum*(1-targetLum));
+    const textureFactor=clamp01(0.84 + (srcNorm-0.5)*0.30);
+
+    const blendChannel=(targetChannel:number)=>{
+      const B=targetChannel/255;
+      const A=gray;
+      const soft=(1-2*B)*(A*A)+2*B*A;
+      const dominant=B*textureFactor;
+      const wTarget=0.86 + (1-midMask)*0.08;
+      const wSoft=0.10*midMask + 0.035;
+      const wPhoto=0.025*midMask;
+      return clamp(Math.round((dominant*wTarget + soft*wSoft + A*wPhoto)*255));
+    };
+
+    d[i]=blendChannel(tr);
+    d[i+1]=blendChannel(tg);
+    d[i+2]=blendChannel(tb);
+  }
+  ctx.putImageData(sourceImage,0,0);
+
+  // Texture lieve della foto originale, in scala di grigio.
+  const textureCanvas=document.createElement('canvas');
+  textureCanvas.width=size;
+  textureCanvas.height=size;
+  const textureCtx=textureCanvas.getContext('2d', { willReadFrequently:true });
+  if(textureCtx){
+    textureCtx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
+    const ximg=textureCtx.getImageData(0,0,size,size);
+    const xd=ximg.data;
+    for(let i=0;i<xd.length;i+=4){
+      const lum=luminance([xd[i],xd[i+1],xd[i+2]]);
+      const gray=clamp(Math.round(lum*255));
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=50;
+    }
+    textureCtx.putImageData(ximg,0,0);
+    ctx.globalCompositeOperation='soft-light';
+    ctx.globalAlpha=0.05;
+    ctx.drawImage(textureCanvas,0,0,size,size);
+  }
+
+  // Ultimo richiamo della vera patch target sopra la tessera.
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=0.18;
+  ctx.drawImage(targetCanvas,0,0,size,size);
+  ctx.globalAlpha=1;
 
   return canvas.toDataURL('image/jpeg', .92);
 }
@@ -501,6 +614,7 @@ export default function ScreenPage(){
   const photoFeatureCache=useRef<Map<string,PhotoFeature>>(new Map());
   const assignedPhotoByIndex=useRef<Map<number,string>>(new Map());
   const targetAspectRef=useRef(1.5);
+  const currentTargetUrlRef=useRef('');
   const currentRun=useRef(0);
 
   function targetImageUrl(s:any){
@@ -610,7 +724,7 @@ export default function ScreenPage(){
       try{
         const xNorm = cols <= 1 ? 0.5 : (bestCell.index % cols) / (cols - 1);
         const yNorm = rows <= 1 ? 0.5 : Math.floor(bestCell.index / cols) / (rows - 1);
-        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, bestCell.patch, xNorm, yNorm);
+        modifiedUrl=await createMosaicTile(feature.url, bestCell.color, bestCell.patch, xNorm, yNorm, currentTargetUrlRef.current, bestCell.col, bestCell.row, cols, rows);
       }catch(e){}
 
       usedIndexes.current.add(bestCell.index);
@@ -684,12 +798,14 @@ export default function ScreenPage(){
 
       const total=s.totalTiles || 600;
       if(s.targetFileId){
-        const aspect = await getImageAspect(targetImageUrl(s));
+        const targetUrl = targetImageUrl(s);
+        currentTargetUrlRef.current = targetUrl;
+        const aspect = await getImageAspect(targetUrl);
         targetAspectRef.current = aspect;
         setTargetAspect(aspect);
         const {cols,rows}=gridForTotal(total, aspect);
         if(targetCellsRef.current.length !== (cols*rows)){
-          targetCellsRef.current=await targetCells(targetImageUrl(s), cols, rows);
+          targetCellsRef.current=await targetCells(targetUrl, cols, rows);
         }
       }
 
@@ -812,7 +928,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore foto-dominante: matching LAB/CIEDE2000 · ogni tessera resta la foto reale, con leggera correzione colore' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore target-dominant: patch matching + LAB/CIEDE2000 · la porzione target prevale dentro ogni tessera' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
