@@ -553,11 +553,11 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
       const soft=(1-2*B)*(A*A)+2*B*A;
       // Più visibilità alla foto originale: il target colora e guida la forma,
       // ma la tessera originale resta molto più leggibile sotto.
-      const wTarget=0.46 + (1-midMask)*0.08;
-      const wSoft=0.16 + midMask*0.06;
-      const wPhotoLum=0.16 + midMask*0.10;
+      const wTarget=0.36 + (1-midMask)*0.06;
+      const wSoft=0.13 + midMask*0.04;
+      const wPhotoLum=0.20 + midMask*0.10;
       const fused=clamp01(B*wTarget + soft*wSoft + A*wPhotoLum);
-      const keepOriginal=0.30;
+      const keepOriginal=0.42;
       return clamp(Math.round((fused*(1-keepOriginal) + (sourceChannel/255)*keepOriginal)*255));
     };
 
@@ -579,27 +579,27 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     for(let i=0;i<xd.length;i+=4){
       const lum=luminance([xd[i],xd[i+1],xd[i+2]]);
       const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=62;
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=52;
     }
     textureCtx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.16;
+    ctx.globalAlpha=0.11;
     ctx.drawImage(textureCanvas,0,0,size,size);
     ctx.globalCompositeOperation='multiply';
-    ctx.globalAlpha=0.07;
+    ctx.globalAlpha=0.04;
     ctx.drawImage(textureCanvas,0,0,size,size);
   }
 
   // Overlay della vera immagine target come trasparenza sopra la tessera: 
   // deve vedersi la forma originale della cella, ma restando leggibile la foto sotto.
   ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.18;
+  ctx.globalAlpha=0.07;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalCompositeOperation='color';
   ctx.globalAlpha=0.12;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.08;
+  ctx.globalAlpha=0.03;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalAlpha=1;
 
@@ -986,7 +986,7 @@ export default function ScreenPage(){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:isFullscreen?'0':'1px solid rgba(255,255,255,.025)',overflow:'hidden'}}>
+              return <div key={i} style={{background:'#222',border:isFullscreen?'1px solid rgba(0,0,0,.20)':'1px solid rgba(255,255,255,.06)',overflow:'hidden', boxSizing:'border-box'}}>
                 {t && <button className="tileButton" onClick={()=>setSelectedTile(t)} title="Vedi foto">
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
@@ -1023,24 +1023,8 @@ export default function ScreenPage(){
       </div>}
 
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
-        <div className="tileModalBox" onClick={(e)=>e.stopPropagation()}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}}>
-            <h2 style={{margin:0}}>Foto tessera</h2>
-            <button className="btn danger" style={{width:'auto'}} onClick={()=>setSelectedTile(null)}>Chiudi</button>
-          </div>
-          <div className="tileModalGrid">
-            <div>
-              <p className="tileModalTitle">Originale</p>
-              <img src={selectedTile.url} alt="Foto originale" />
-            </div>
-            <div>
-              <p className="tileModalTitle">Modificata per il mosaico</p>
-              <img src={selectedTile.modifiedUrl} alt="Foto modificata per il mosaico" />
-              <p style={{fontSize:13,opacity:.72,marginTop:8}}>
-                Colore target: RGB {selectedTile.color.join(', ')} · ripetizione foto: {selectedTile.repeated}
-              </p>
-            </div>
-          </div>
+        <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>e.stopPropagation()}>
+          <img src={selectedTile.modifiedUrl || selectedTile.url} alt="Tessera" style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
         </div>
       </div>}
 

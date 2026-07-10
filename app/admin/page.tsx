@@ -513,11 +513,11 @@ async function createPreviewMosaicTile(
     const blend=(tc:number, sc:number)=>{
       const B=tc/255;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      const wTarget=0.46+(1-midMask)*0.08;
-      const wSoft=0.16+midMask*0.06;
-      const wPhotoLum=0.16+midMask*0.10;
+      const wTarget=0.36+(1-midMask)*0.06;
+      const wSoft=0.13+midMask*0.04;
+      const wPhotoLum=0.20+midMask*0.10;
       const fused=clamp01(B*wTarget+soft*wSoft+A*wPhotoLum);
-      const keepOriginal=0.30;
+      const keepOriginal=0.42;
       return clamp(Math.round((fused*(1-keepOriginal)+(sc/255)*keepOriginal)*255));
     };
     d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
@@ -535,24 +535,24 @@ async function createPreviewMosaicTile(
     for(let i=0;i<xd.length;i+=4){
       const lum=(0.2126*xd[i]+0.7152*xd[i+1]+0.0722*xd[i+2])/255;
       const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=62;
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=52;
     }
     tx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.16;
+    ctx.globalAlpha=0.11;
     ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
     ctx.globalCompositeOperation='multiply';
-    ctx.globalAlpha=0.07;
+    ctx.globalAlpha=0.04;
     ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
   }
   ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=0.18;
+  ctx.globalAlpha=0.07;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalCompositeOperation='color';
   ctx.globalAlpha=0.12;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.08;
+  ctx.globalAlpha=0.03;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalAlpha=1;
   return canvas;
@@ -605,21 +605,21 @@ async function createTargetDominantPreviewTile(sourceUrl:string, targetUrl:strin
     const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
     const gray=clamp(Math.round(255 * Math.pow(clamp01((lum-minLum)/range), 0.95)));
     d[i]=gray; d[i+1]=gray; d[i+2]=gray;
-    d[i+3]=68;
+    d[i+3]=56;
   }
   sctx.putImageData(srcImage,0,0);
 
   octx.globalCompositeOperation='soft-light';
-  octx.globalAlpha=0.17;
+  octx.globalAlpha=0.11;
   octx.drawImage(srcCanvas,0,0,size,size);
   octx.globalCompositeOperation='multiply';
-  octx.globalAlpha=0.08;
+  octx.globalAlpha=0.04;
   octx.drawImage(srcCanvas,0,0,size,size);
   octx.globalCompositeOperation='color';
-  octx.globalAlpha=0.10;
+  octx.globalAlpha=0.06;
   octx.drawImage(patchCanvas,0,0,size,size);
   octx.globalCompositeOperation='source-over';
-  octx.globalAlpha=0.08;
+  octx.globalAlpha=0.03;
   octx.drawImage(patchCanvas,0,0,size,size);
   octx.globalAlpha=1;
 
@@ -1290,7 +1290,7 @@ export default function AdminPage(){
             </div>
             <div style={{flex:1, overflow:'auto', padding:16}}>
               <div style={{width:'fit-content', margin:'0 auto', background:'#111', padding:10, borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
-                <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#000'}}>
+                <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#0a0a0a'}}>
                   {interactivePreview.tiles.sort((a,b)=>a.index-b.index).map(tile => (
                     <button key={tile.index} type='button' onClick={()=>openPreviewTileDetail(tile)} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
                       <img src={tile.renderedUrl} alt={`Tessera ${tile.index+1}`} style={{display:'block', width:'100%', height:'100%', objectFit:'cover'}} />
@@ -1300,36 +1300,9 @@ export default function AdminPage(){
               </div>
             </div>
             {selectedPreviewTile && (
-              <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.62)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>
-                <div style={{width:'min(95vw, 900px)', maxHeight:'92vh', overflow:'auto', background:'#fffaf4', color:'#4f3c2f', borderRadius:24, padding:18, boxShadow:'0 30px 80px rgba(0,0,0,.38)'}} onClick={e=>e.stopPropagation()}>
-                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:10}}>
-                    <div>
-                      <div style={{fontWeight:800, fontSize:22}}>Dettaglio tessera</div>
-                      <div style={{fontSize:14}}>Riga {selectedPreviewTile.row+1} — Colonna {selectedPreviewTile.col+1} — Indice {selectedPreviewTile.index+1}</div>
-                    </div>
-                    <button className='btn danger' type='button' onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>Chiudi</button>
-                  </div>
-                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:16, alignItems:'start'}}>
-                    <div>
-                      <b>Come viene nel mosaico</b>
-                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
-                        {selectedPreviewLoading && !selectedPreviewDetailUrl ? <div className='small' style={{padding:'28px 12px'}}>Creo dettaglio reale della tessera...</div> : <img src={selectedPreviewDetailUrl || selectedPreviewTile.renderedUrl} alt='Tessera renderizzata' style={{display:'block', width:'100%'}} />}
-                      </div>
-                    </div>
-                    <div>
-                      <b>Foto origine della tessera</b>
-                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
-                        <img src={selectedPreviewTile.originalUrl} alt='Foto origine tessera' style={{display:'block', width:'100%'}} />
-                      </div>
-                    </div>
-                    <div>
-                      <b>Porzione immagine target della cella</b>
-                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
-                        {selectedPreviewLoading && !selectedPreviewTargetPatchUrl ? <div className='small' style={{padding:'28px 12px'}}>Estraggo la porzione reale dell'immagine target...</div> : selectedPreviewTargetPatchUrl ? <img src={selectedPreviewTargetPatchUrl} alt='Patch target della cella' style={{display:'block', width:'100%'}} /> : <div style={{height:120, background:`rgb(${selectedPreviewTile.targetColor[0]}, ${selectedPreviewTile.targetColor[1]}, ${selectedPreviewTile.targetColor[2]})`}} />}
-                      </div>
-                      <div className='small' style={{marginTop:8}}>RGB medio cella: {selectedPreviewTile.targetColor.join(', ')}</div>
-                    </div>
-                  </div>
+              <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.72)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>{setSelectedPreviewTile(null); setSelectedPreviewDetailUrl(''); setSelectedPreviewTargetPatchUrl('');}}>
+                <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={e=>e.stopPropagation()}>
+                  {selectedPreviewLoading && !selectedPreviewDetailUrl ? <div style={{background:'#fffaf4', color:'#4f3c2f', padding:'18px 22px', borderRadius:16}}>Creo immagine tessera...</div> : <img src={selectedPreviewDetailUrl || selectedPreviewTile.renderedUrl} alt='Tessera ingrandita' style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />}
                 </div>
               </div>
             )}
