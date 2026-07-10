@@ -26,24 +26,16 @@ function qLoadImg(url:string): Promise<HTMLImageElement>{ return new Promise((re
 function qMix(a:number,b:number,t:number){ return a+(b-a)*t; }
 function qMixRgb(a:number[],b:number[],t:number){ return [Math.round(qMix(a[0],b[0],t)),Math.round(qMix(a[1],b[1],t)),Math.round(qMix(a[2],b[2],t))]; }
 function qGrid(total:number, aspect:number=1.5){
+  // L’anteprima rapida non deve ricostruire tutte le 600–3000 tessere reali.
+  // Usa una griglia leggera, proporzionata alla foto finale, sufficiente per
+  // verificare immediatamente leggibilità, colori e resa generale.
   const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
-  const previewTotal = Math.min(total, total <= 600 ? 600 : total <= 1200 ? 816 : total <= 2000 ? 1120 : 1350);
-  let bestCols = previewTotal;
-  let bestRows = 1;
-  let bestError = Number.POSITIVE_INFINITY;
-  for(let rows=1; rows<=Math.sqrt(previewTotal)+1; rows++){
-    if(previewTotal % rows !== 0) continue;
-    const cols = previewTotal / rows;
-    const ratio = cols / rows;
-    const error = Math.abs(ratio - safeAspect);
-    if(error < bestError){
-      bestError = error;
-      bestCols = cols;
-      bestRows = rows;
-    }
-  }
-  if(bestCols < bestRows){
-    const t = bestCols; bestCols = bestRows; bestRows = t;
+  const previewTotal = Math.max(96, Math.min(300, Math.round(Math.sqrt(Math.max(1,total))*10)));
+  let bestCols = Math.max(1, Math.round(Math.sqrt(previewTotal * safeAspect)));
+  let bestRows = Math.max(1, Math.round(previewTotal / bestCols));
+  while(bestCols * bestRows > 320){
+    if(bestCols >= bestRows) bestCols--;
+    else bestRows--;
   }
   return {cols:bestCols, rows:bestRows};
 }
@@ -68,6 +60,26 @@ async function qTargetColors(url:string, cols:number, rows:number){
   return out;
 }
 function qDist(a:number[],b:number[]){ return (a[0]-b[0])**2*.30+(a[1]-b[1])**2*.58+(a[2]-b[2])**2*.22+(qLum(a)*255-qLum(b)*255)**2*.65; }
+function qDrawFastTile(ctx:CanvasRenderingContext2D,img:HTMLImageElement,target:number[],x:number,y:number,size:number,xNorm:number=0.5,yNorm:number=0.5){
+  const iw=img.naturalWidth||img.width||1, ih=img.naturalHeight||img.height||1;
+  const side=Math.min(iw,ih);
+  let sx=0, sy=0;
+  if(iw>ih) sx=Math.round((iw-side)*Math.max(0,Math.min(1,xNorm)));
+  else if(ih>iw) sy=Math.round((ih-side)*Math.max(0,Math.min(1,yNorm)));
+  ctx.save();
+  ctx.drawImage(img,sx,sy,side,side,x,y,size,size);
+  // Ricolorazione rapidissima: conserva i dettagli della foto ma la porta
+  // verso il colore della cella, senza leggere/modificare ogni pixel.
+  ctx.globalCompositeOperation='color';
+  ctx.globalAlpha=.78;
+  ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+  ctx.fillRect(x,y,size,size);
+  ctx.globalCompositeOperation='multiply';
+  ctx.globalAlpha=.20;
+  ctx.fillStyle=`rgb(${Math.max(35,target[0])},${Math.max(35,target[1])},${Math.max(35,target[2])})`;
+  ctx.fillRect(x,y,size,size);
+  ctx.restore();
+}
 async function qTile(url:string,target:number[],tileSize:number,xNorm:number=0.5,yNorm:number=0.5){
   const img=await qLoadImg(url); const c=document.createElement('canvas'); c.width=tileSize;c.height=tileSize; const ctx=c.getContext('2d',{willReadFrequently:true}); if(!ctx) return c;
   const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
@@ -517,86 +529,73 @@ export default function AdminPage(){
     setErr('');
     setPreviewRunning(true);
     setPreviewFastUrl('');
+    setPreviewText('Preparo anteprima istantanea...');
     try{
       if(!data?.targetFileId) throw new Error('Carica prima la foto finale.');
       const photos=(data?.photos||[]).slice();
       if(!photos.length) throw new Error('Carica prima alcune foto invitati o usa Upload test.');
       const total=Number(data?.totalTiles||600);
       const targetUrlLocal=`/api/image?id=${data.targetFileId}&v=${data?.target?.updated||Date.now()}`;
-      const aspect = await qImageAspect(targetUrlLocal);
-      const {cols,rows}=qGrid(total, aspect);
-      const tileSize=12;
+      const aspect=await qImageAspect(targetUrlLocal);
+      const {cols,rows}=qGrid(total,aspect);
+      const tileSize=18;
       const canvas=document.createElement('canvas');
-      canvas.width=cols*tileSize; canvas.height=rows*tileSize;
+      canvas.width=cols*tileSize;
+      canvas.height=rows*tileSize;
       const ctx=canvas.getContext('2d');
       if(!ctx) throw new Error('Canvas non disponibile.');
       ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
-      setPreviewText('Campiono immagine principale...');
       const targetColors=await qTargetColors(targetUrlLocal,cols,rows);
+      const maxPhotos=Math.min(photos.length,180);
+      setPreviewText(`Carico miniature 0 / ${maxPhotos}...`);
 
-      setPreviewText('Analizzo miniature foto...');
-      const maxPhotos=Math.min(photos.length, 340);
-      const features:any[]=[];
-      for(let i=0;i<maxPhotos;i++){
-        const p=photos[i]; const url=`/api/image?id=${p.id}`;
-        try{ features.push({id:p.id,url,avg:await qAvgPhoto(url),use:0}); }catch{}
-        if(i%14===0) await new Promise(r=>setTimeout(r,0));
-      }
+      // Caricamento concorrente e una sola decodifica per foto. In precedenza
+      // ogni tessera ricaricava la stessa immagine, causando il blocco 60/217.
+      const jobs=photos.slice(0,maxPhotos).map(async(p:any,index:number)=>{
+        const url=`/api/image?id=${p.id}`;
+        try{
+          const [img,avg]=await Promise.all([qLoadImg(url),qAvgPhoto(url)]);
+          if(index%20===0) setPreviewText(`Carico miniature ${Math.min(index+20,maxPhotos)} / ${maxPhotos}...`);
+          return {id:p.id,url,img,avg,use:0};
+        }catch{return null;}
+      });
+      const loaded=await Promise.all(jobs);
+      const features=loaded.filter(Boolean) as Array<{id:string;url:string;img:HTMLImageElement;avg:number[];use:number}>;
       if(!features.length) throw new Error('Non riesco ad analizzare le foto.');
 
-      const assigned = new Map<number,string>();
-      setPreviewText(features.length < total ? `Creo anteprima veloce: per il test riuso automaticamente le ${features.length} foto disponibili.` : 'Creo anteprima veloce...');
+      const assigned=new Map<number,string>();
+      setPreviewText(`Compongo ${cols*rows} tessere leggere...`);
       for(let i=0;i<targetColors.length;i++){
         const target=targetColors[i];
-        const x = i % cols;
-        const y = Math.floor(i / cols);
+        const x=i%cols, y=Math.floor(i/cols);
         let best=features[0], bestScore=Number.POSITIVE_INFINITY;
-
         for(const f of features){
-          let score=qDist(f.avg,target)+f.use*f.use*140;
-          for(let dy=-2; dy<=2; dy++){
-            for(let dx=-2; dx<=2; dx++){
-              if(dx===0 && dy===0) continue;
-              const nx=x+dx, ny=y+dy;
-              if(nx<0||ny<0||nx>=cols||ny>=rows) continue;
-              const idx=ny*cols+nx;
-              if(assigned.get(idx)===f.id){
-                const dist=Math.abs(dx)+Math.abs(dy);
-                if(dist<=1) score += 60000;
-                else if(dist===2) score += 16000;
-                else score += 6000;
-              }
-            }
-          }
+          let score=qDist(f.avg,target)+f.use*f.use*95;
+          const left=assigned.get(i-1), up=assigned.get(i-cols);
+          if(left===f.id) score+=28000;
+          if(up===f.id) score+=28000;
           if(score<bestScore){bestScore=score;best=f;}
         }
-
         best.use++;
         assigned.set(i,best.id);
-        const xNorm = cols <= 1 ? 0.5 : x / (cols - 1);
-        const yNorm = rows <= 1 ? 0.5 : y / (rows - 1);
-        const tile=await qTile(best.url,target,tileSize,xNorm,yNorm);
-        ctx.drawImage(tile,x*tileSize,y*tileSize,tileSize,tileSize);
-
-        if(i%36===0){
-          setPreviewFastUrl(canvas.toDataURL('image/jpeg',.84));
+        qDrawFastTile(ctx,best.img,target,x*tileSize,y*tileSize,tileSize,cols<=1?.5:x/(cols-1),rows<=1?.5:y/(rows-1));
+        if(i>0 && i%80===0){
+          setPreviewFastUrl(canvas.toDataURL('image/jpeg',.78));
           await new Promise(r=>setTimeout(r,0));
         }
       }
 
-      // Overlay leggero della foto finale: aiuta a leggere la figura, ma senza coprire le tessere.
       const targetImg=await qLoadImg(targetUrlLocal);
-      ctx.globalCompositeOperation='source-over';
-      ctx.globalAlpha=.12;
+      ctx.save();
+      ctx.globalAlpha=.10;
       ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
-      ctx.globalAlpha=1;
-
-      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.91));
-      setPreviewText(`Anteprima pronta: ${cols}×${rows} = ${cols*rows} tessere ridotte. Uso finale: ${data.totalTiles} tessere.`);
-      showAdminMsg('Anteprima veloce pronta.');
+      ctx.restore();
+      setPreviewFastUrl(canvas.toDataURL('image/jpeg',.88));
+      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Il mosaico reale resta impostato a ${total} tessere.`);
+      showAdminMsg('Anteprima rapida pronta.');
     }catch(e:any){
-      setErr(e?.message || 'Errore anteprima');
+      setErr(e?.message||'Errore anteprima rapida');
     }finally{
       setPreviewRunning(false);
     }
@@ -743,9 +742,22 @@ export default function AdminPage(){
         <div className="spacer"/><h2>Anteprima risultato finale del mosaico</h2>
         <p>Da qui puoi vedere prima il risultato finale del tuo fotomosaico. L’anteprima usa la stessa logica di ricolorazione delle tessere: ogni foto viene adattata al colore della propria cella per ricreare l’immagine finale.</p>
         <div className="gridBtns">
-          <button className="btn" disabled={previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildAdminPreview}>Genera anteprima mosaico</button>
+          <button className="btn" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildQuickPreview}>{previewRunning ? 'Creo anteprima rapida...' : 'Anteprima rapida'}</button>
+          <button className="btn secondary" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildAdminPreview}>{previewBusy ? 'Creo qualità completa...' : 'Anteprima qualità completa'}</button>
           <Link className="btn secondary" href="/screen" onClick={()=>sessionStorage.removeItem('fm_admin_password')}>Apri schermo mosaico</Link>
         </div>
+        <p style={{marginTop:10}}><b>Anteprima rapida:</b> usa poche tessere simulate e miniature già caricate, quindi non esegue il pesante processo finale. <b>Qualità completa:</b> serve solo per un controllo approfondito.</p>
+        {(previewRunning || previewText) && <div className="ok" style={{display:'block', marginTop:12}}>{previewText}</div>}
+        {previewFastUrl && <div className="mosaicPreviewWrap">
+          <div className="mosaicPreviewCard">
+            <b>Anteprima rapida</b>
+            <img src={previewFastUrl} alt="Anteprima rapida fotomosaico" />
+          </div>
+          <div className="mosaicPreviewCard">
+            <b>Immagine finale di riferimento</b>
+            {targetUrl ? <img src={targetUrl} alt="Immagine finale" /> : <p>Non caricata</p>}
+          </div>
+        </div>}
         {(previewBusy || previewProgress) && <div className="ok" style={{display:'block', marginTop:12}}>{previewBusy ? previewProgress || 'Creo anteprima...' : previewProgress}</div>}
         {previewUrl && <div className="mosaicPreviewWrap">
           <div className="mosaicPreviewCard">
