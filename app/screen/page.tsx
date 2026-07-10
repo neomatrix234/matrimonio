@@ -26,6 +26,7 @@ type TargetCell = {
   sat:number;
   patch:Rgb[];
   patchLum:number[];
+  contrast:number;
   importance:number;
 };
 
@@ -46,8 +47,8 @@ const PROFESSIONAL_MOSAIC = {
   preserveOriginal: 0.06,
   targetSampleFactor: 8,
   tileCanvasSize: 190,
-  patchSize: 8,
-  patternWeight: 5.5,
+  patchSize: 10,
+  patternWeight: 6.4,
 };
 
 function srgbToLinear01(v:number){
@@ -197,6 +198,15 @@ function mixRgb(a:Rgb,b:Rgb,t:number): Rgb{
     Math.round(mix(a[2],b[2],t))
   ];
 }
+function blendHue(h1:number,h2:number,t:number){
+  let diff = h2 - h1;
+  if(diff > 0.5) diff -= 1;
+  if(diff < -0.5) diff += 1;
+  let out = h1 + diff * t;
+  if(out < 0) out += 1;
+  if(out > 1) out -= 1;
+  return out;
+}
 
 
 function adaptiveSquareCrop(iw:number, ih:number, xNorm:number=0.5, yNorm:number=0.5){
@@ -300,12 +310,14 @@ function labDistance(a:Lab,b:Lab){
 
 function photoCellScore(photo:PhotoFeature, cell:TargetCell, maxReuse:number){
   const de = deltaE2000(photo.lab, cell.lab);
-  const lum = Math.pow((photo.lum-cell.lum)*100,2) * 0.16;
-  const sat = Math.pow((photo.sat-cell.sat)*55,2) * 0.05;
+  const labFast = labDistance(photo.lab, cell.lab) * 0.012;
+  const lum = Math.pow((photo.lum-cell.lum)*100,2) * 0.18;
+  const sat = Math.pow((photo.sat-cell.sat)*55,2) * 0.06;
+  const contrast = Math.pow((photo.contrast-cell.contrast)*160,2) * 0.035;
   const pattern = normalizedPatchDistance(photo.patchLum, cell.patchLum) * PROFESSIONAL_MOSAIC.patternWeight;
-  const reusePenalty = photo.useCount <= 0 ? 0 : Math.pow(photo.useCount, 2) * 12;
+  const reusePenalty = photo.useCount <= 0 ? 0 : Math.pow(photo.useCount, 2) * 14;
   const overPenalty = photo.useCount >= maxReuse ? 999999999 : 0;
-  return de*de + lum + sat + pattern + reusePenalty + overPenalty;
+  return de*de + labFast + lum + sat + contrast + pattern + reusePenalty + overPenalty;
 }
 
 function loadImg(url:string): Promise<HTMLImageElement>{
@@ -403,8 +415,9 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
       const color:Rgb=linearAverageToRgb(sr,sg,sb,count);
       const lum=luminance(color);
       const sat=saturation(color);
+      const contrast=patchContrast(patchLum);
       const index=cy*cols+cx;
-      cells.push({index,color,lab:rgbToLab(color),lum,sat,patch,patchLum,importance:0});
+      cells.push({index,color,lab:rgbToLab(color),lum,sat,patch,patchLum,contrast,importance:0});
     }
   }
 
@@ -416,7 +429,7 @@ async function targetCells(url:string, cols:number, rows:number): Promise<Target
     const up=y>0?cells[cell.index-cols]:cell;
     const down=y<rows-1?cells[cell.index+cols]:cell;
     const edge = Math.abs(cell.lum-left.lum)*34 + Math.abs(cell.lum-right.lum)*34 + Math.abs(cell.lum-up.lum)*34 + Math.abs(cell.lum-down.lum)*34;
-    const detail = patchContrast(cell.patchLum)*3.5;
+    const detail = cell.contrast*4.4;
     const importance = edge + detail + cell.sat*1.8 + Math.abs(cell.lum-.5)*.55;
     return {...cell, importance};
   });
@@ -433,7 +446,7 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
-  const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
+  const crop = adaptiveSquareCrop(iw, ih, 0.5, 0.5);
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
   const image=ctx.getImageData(0,0,size,size);
@@ -445,42 +458,57 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     if(lum<minLum) minLum=lum;
     if(lum>maxLum) maxLum=lum;
   }
-  const range=Math.max(0.08, maxLum-minLum);
-
-  const preserve = PROFESSIONAL_MOSAIC.preserveOriginal;
+  const range=Math.max(0.065, maxLum-minLum);
+  const preserve = 0.08;
 
   for(let i=0;i<d.length;i+=4){
     const pixelIndex=i/4;
     const px=pixelIndex%size;
     const py=Math.floor(pixelIndex/size);
     const localTarget = patchColorAt(targetPatch, px/(size-1), py/(size-1), target);
-    const guidedTarget = mixRgb(target, localTarget, 0.58);
-
-    const [th, ts, tl] = rgbToHsl(guidedTarget);
-    const darkTone  = hslToRgb(th, clamp01(ts*0.96 + 0.02), clamp01(tl*0.16 + 0.015));
-    const lightTone = hslToRgb(th, clamp01(ts*0.42 + 0.08), clamp01(tl + (1-tl)*0.56));
 
     const r=d[i], g=d[i+1], b=d[i+2];
-    let tone = clamp01((luminance([r,g,b]) - minLum) / range);
-    tone = Math.pow(tone, 0.90);
-    const mapped = tone < 0.5 ? mixRgb(darkTone, guidedTarget, tone*2) : mixRgb(guidedTarget, lightTone, (tone-0.5)*2);
-    d[i]   = clamp((mapped[0]*(1-preserve)+r*preserve-128)*1.02+128);
-    d[i+1] = clamp((mapped[1]*(1-preserve)+g*preserve-128)*1.02+128);
-    d[i+2] = clamp((mapped[2]*(1-preserve)+b*preserve-128)*1.02+128);
+    const srcLum=luminance([r,g,b]);
+    const srcNorm=clamp01((srcLum-minLum)/range);
+    const srcDetail=(srcNorm-0.5)*0.34;
+    const [sh,ss]=rgbToHsl([r,g,b]);
+    const [th,ts,tl]=rgbToHsl(localTarget);
+
+    const outHue=blendHue(sh, th, 0.82);
+    const outSat=clamp01(ts*0.82 + ss*0.28 + 0.035);
+    const outLum=clamp01(tl + srcDetail);
+    const mapped=hslToRgb(outHue, outSat, outLum);
+
+    d[i]   = clamp(Math.round(mapped[0]*(1-preserve)+r*preserve));
+    d[i+1] = clamp(Math.round(mapped[1]*(1-preserve)+g*preserve));
+    d[i+2] = clamp(Math.round(mapped[2]*(1-preserve)+b*preserve));
+  }
+
+  // lieve nitidezza per far leggere meglio la tessera dentro lo slot
+  const base = new Uint8ClampedArray(d);
+  const stride = size * 4;
+  const sharpen = 0.16;
+  for(let y=1;y<size-1;y++){
+    for(let x=1;x<size-1;x++){
+      const idx = y*stride + x*4;
+      for(let c=0;c<3;c++){
+        const blur = (base[idx-4+c] + base[idx+4+c] + base[idx-stride+c] + base[idx+stride+c]) / 4;
+        d[idx+c] = clamp(Math.round(base[idx+c] + (base[idx+c] - blur) * sharpen));
+      }
+    }
   }
 
   ctx.putImageData(image,0,0);
 
-  // Versione ispirata a MacOSaiX: confronto/ricostruzione a patch, non solo media colore.
-  // Nessun doppio multiply+screen sporco: solo una velatura leggera e pulita.
   ctx.globalCompositeOperation='source-over';
   ctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
-  ctx.globalAlpha=PROFESSIONAL_MOSAIC.tintOpacity;
+  ctx.globalAlpha=0.08;
   ctx.fillRect(0,0,size,size);
   ctx.globalAlpha=1;
 
-  return canvas.toDataURL('image/jpeg', .86);
+  return canvas.toDataURL('image/jpeg', .90);
 }
+
 
 export default function ScreenPage(){
   const [status,setStatus]=useState<any>(null);
@@ -582,6 +610,7 @@ export default function ScreenPage(){
       // cerca una cella adatta tra un sottoinsieme di celle ancora libere:
       // è molto più veloce e permette avvio immediato.
       let checked=0;
+      const maxChecked = total >= 2500 ? 1400 : total >= 1500 ? 1100 : total >= 1000 ? 850 : 520;
       for(const cell of cellsByImportance){
         if(usedIndexes.current.has(cell.index)) continue;
         const score=photoCellScore(feature,cell,maxReuse) + neighborDuplicatePenalty(feature.id, cell.index, cols, rows);
@@ -590,7 +619,7 @@ export default function ScreenPage(){
           bestCell=cell;
         }
         checked++;
-        if(checked > 420) break;
+        if(checked > maxChecked) break;
       }
 
       // se non trova entro il campione, prende la prossima cella importante libera
@@ -839,7 +868,7 @@ export default function ScreenPage(){
           </div>
           {targetUrl && count>0 && !final && <img className="mosaicSoftReferenceOverlay" src={targetUrl} alt="" style={{
             position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
-            opacity:.30, mixBlendMode:'normal', pointerEvents:'none', zIndex:2
+            opacity:.16, mixBlendMode:'normal', pointerEvents:'none', zIndex:2
           }}/>}
           {targetUrl && <img src={targetUrl} alt="" style={{
             position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
