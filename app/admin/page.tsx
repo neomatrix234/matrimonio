@@ -268,6 +268,7 @@ type Rgb = [number,number,number];
 type Lab = [number,number,number];
 type PreviewFeature = { id:string; url:string; avg:Rgb; lab:Lab; lum:number; sat:number; useCount:number };
 type PreviewCell = { index:number; color:Rgb; lab:Lab; lum:number; sat:number; importance:number };
+type PreviewTileData = { index:number; row:number; col:number; originalUrl:string; renderedUrl:string; targetColor:Rgb; };
 
 function gridForTotal(total:number, aspect:number=1.5){
   const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
@@ -543,6 +544,13 @@ export default function AdminPage(){
   const [previewBusy,setPreviewBusy]=useState(false);
   const [previewProgress,setPreviewProgress]=useState('');
   const [previewUrl,setPreviewUrl]=useState('');
+  const [previewFastTiles,setPreviewFastTiles]=useState<PreviewTileData[]>([]);
+  const [previewFastMeta,setPreviewFastMeta]=useState<{cols:number;rows:number;cellSize:number}|null>(null);
+  const [previewFullTiles,setPreviewFullTiles]=useState<PreviewTileData[]>([]);
+  const [previewFullMeta,setPreviewFullMeta]=useState<{cols:number;rows:number;cellSize:number}|null>(null);
+  const [interactivePreview,setInteractivePreview]=useState<{title:string; tiles:PreviewTileData[]; cols:number; rows:number; cellSize:number}|null>(null);
+  const [interactivePreviewZoom,setInteractivePreviewZoom]=useState(2);
+  const [selectedPreviewTile,setSelectedPreviewTile]=useState<PreviewTileData|null>(null);
 
   useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
 
@@ -775,6 +783,25 @@ export default function AdminPage(){
   async function clearTarget(){ if(!confirm('Cancellare la foto finale?'))return; setBusyText('Cancello foto finale...'); try{await adminAction('clearTarget');showAdminMsg('Foto finale cancellata.');}catch{} }
   async function clearBackground(){ if(!confirm('Cancellare lo sfondo?'))return; setBusyText('Cancello sfondo...'); try{await adminAction('clearBackground');showAdminMsg('Sfondo cancellato.');}catch{} }
 
+  function openInteractivePreview(kind:'fast'|'full'){
+    const tiles = kind==='fast' ? previewFastTiles : previewFullTiles;
+    const meta = kind==='fast' ? previewFastMeta : previewFullMeta;
+    if(!tiles.length || !meta) return;
+    setSelectedPreviewTile(null);
+    setInteractivePreview({
+      title: kind==='fast' ? 'Anteprima rapida interattiva' : 'Anteprima qualità completa interattiva',
+      tiles,
+      cols: meta.cols,
+      rows: meta.rows,
+      cellSize: meta.cellSize
+    });
+    setInteractivePreviewZoom(kind==='fast' ? 2.2 : 1.8);
+  }
+  function closeInteractivePreview(){
+    setSelectedPreviewTile(null);
+    setInteractivePreview(null);
+  }
+
   async function buildQuickPreview(){
     setErr('');
     setPreviewRunning(true);
@@ -857,8 +884,9 @@ export default function AdminPage(){
         ctx.drawImage(targetImg,0,0,canvas.width,canvas.height);
         ctx.restore();
       }
+      setPreviewFastTiles(previewTiles);
       setPreviewFastUrl(canvas.toDataURL('image/jpeg',.90));
-      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Ora è più leggibile, ma il mosaico reale resta impostato a ${total} tessere.`);
+      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Ora è più leggibile, ma il mosaico reale resta impostato a ${total} tessere. Puoi aprirla a schermo intero e cliccare ogni tessera.`);
       showAdminMsg('Anteprima rapida pronta.');
     }catch(e:any){
       setErr(e?.message||'Errore anteprima rapida');
@@ -930,6 +958,14 @@ export default function AdminPage(){
         const x = (cell.index % cols) * cellSize;
         const y = Math.floor(cell.index / cols) * cellSize;
         ctx.drawImage(tileCanvas, x, y, cellSize, cellSize);
+        previewTiles.push({
+          index:cell.index,
+          row:Math.floor(cell.index / cols),
+          col:cell.index % cols,
+          originalUrl:best.url,
+          renderedUrl:tileCanvas.toDataURL('image/jpeg', 0.92),
+          targetColor:cell.color
+        });
         used.add(cell.index);
         assigned.set(cell.index, best.id);
 
@@ -940,8 +976,9 @@ export default function AdminPage(){
         }
       }
 
+      setPreviewFullTiles(previewTiles);
       setPreviewUrl(canvas.toDataURL('image/jpeg', 0.92));
-      setPreviewProgress(`Anteprima pronta: ${used.size} tessere renderizzate.`);
+      setPreviewProgress(`Anteprima pronta: ${used.size} tessere renderizzate. Puoi aprirla a schermo intero e cliccare ogni tessera.`);
       showAdminMsg('Anteprima mosaico generata.');
     }catch(e:any){
       setErr(e?.message || 'Errore creazione anteprima');
@@ -1017,7 +1054,9 @@ export default function AdminPage(){
         {previewFastUrl && <div className="mosaicPreviewWrap">
           <div className="mosaicPreviewCard">
             <b>Anteprima rapida</b>
-            <img src={previewFastUrl} alt="Anteprima rapida fotomosaico" />
+            <img src={previewFastUrl} alt="Anteprima rapida fotomosaico" style={{cursor:'zoom-in'}} onClick={()=>openInteractivePreview('fast')} />
+            <div className="spacer"/>
+            <button className="btn secondary" type="button" onClick={()=>openInteractivePreview('fast')} disabled={!previewFastTiles.length}>Apri a schermo intero e clicca le tessere</button>
           </div>
           <div className="mosaicPreviewCard">
             <b>Immagine finale di riferimento</b>
@@ -1028,7 +1067,9 @@ export default function AdminPage(){
         {previewUrl && <div className="mosaicPreviewWrap">
           <div className="mosaicPreviewCard">
             <b>Anteprima fotomosaico</b>
-            <img src={previewUrl} alt="Anteprima mosaico" />
+            <img src={previewUrl} alt="Anteprima mosaico" style={{cursor:'zoom-in'}} onClick={()=>openInteractivePreview('full')} />
+            <div className="spacer"/>
+            <button className="btn secondary" type="button" onClick={()=>openInteractivePreview('full')} disabled={!previewFullTiles.length}>Apri a schermo intero e clicca le tessere</button>
           </div>
           <div className="mosaicPreviewCard">
             <b>Immagine finale di riferimento</b>
@@ -1073,6 +1114,65 @@ export default function AdminPage(){
         <div className="spacer"/><h2>5. Cambia password Admin</h2>
         <input className="field" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Nuova password admin" onKeyDown={(e)=>{if(e.key==='Enter' && newPassword.length>=6) changePassword();}}/>
         <div className="spacer"/><button className="btn" disabled={busy||newPassword.length<6} onClick={changePassword}>Aggiorna password</button>
+
+        {interactivePreview && (
+          <div style={{position:'fixed', inset:0, zIndex:80, background:'rgba(10,8,6,.92)', display:'flex', flexDirection:'column'}}>
+            <div style={{display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderBottom:'1px solid rgba(255,255,255,.12)', color:'#fff', flexWrap:'wrap'}}>
+              <div style={{fontWeight:800, fontSize:20}}>{interactivePreview.title}</div>
+              <div style={{fontSize:13, opacity:.88}}>Griglia {interactivePreview.cols}×{interactivePreview.rows} — clicca una tessera per vedere il dettaglio.</div>
+              <div style={{marginLeft:'auto', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                <label style={{fontSize:13}}>Zoom {interactivePreviewZoom.toFixed(1)}×</label>
+                <input type='range' min='1' max='5' step='0.1' value={interactivePreviewZoom} onChange={e=>setInteractivePreviewZoom(Number(e.target.value))} />
+                <button className='btn secondary' type='button' onClick={()=>setInteractivePreviewZoom(v=>Math.max(1, Math.round((v-0.2)*10)/10))}>-</button>
+                <button className='btn secondary' type='button' onClick={()=>setInteractivePreviewZoom(v=>Math.min(5, Math.round((v+0.2)*10)/10))}>+</button>
+                <button className='btn danger' type='button' onClick={closeInteractivePreview}>Chiudi</button>
+              </div>
+            </div>
+            <div style={{flex:1, overflow:'auto', padding:16}}>
+              <div style={{width:'fit-content', margin:'0 auto', background:'#111', padding:10, borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
+                <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#000'}}>
+                  {interactivePreview.tiles.sort((a,b)=>a.index-b.index).map(tile => (
+                    <button key={tile.index} type='button' onClick={()=>setSelectedPreviewTile(tile)} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
+                      <img src={tile.renderedUrl} alt={`Tessera ${tile.index+1}`} style={{display:'block', width:'100%', height:'100%', objectFit:'cover'}} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {selectedPreviewTile && (
+              <div style={{position:'fixed', inset:0, zIndex:81, background:'rgba(0,0,0,.62)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}} onClick={()=>setSelectedPreviewTile(null)}>
+                <div style={{width:'min(95vw, 900px)', maxHeight:'92vh', overflow:'auto', background:'#fffaf4', color:'#4f3c2f', borderRadius:24, padding:18, boxShadow:'0 30px 80px rgba(0,0,0,.38)'}} onClick={e=>e.stopPropagation()}>
+                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:10}}>
+                    <div>
+                      <div style={{fontWeight:800, fontSize:22}}>Dettaglio tessera</div>
+                      <div style={{fontSize:14}}>Riga {selectedPreviewTile.row+1} — Colonna {selectedPreviewTile.col+1} — Indice {selectedPreviewTile.index+1}</div>
+                    </div>
+                    <button className='btn danger' type='button' onClick={()=>setSelectedPreviewTile(null)}>Chiudi</button>
+                  </div>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:16, alignItems:'start'}}>
+                    <div>
+                      <b>Come viene nel mosaico</b>
+                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
+                        <img src={selectedPreviewTile.renderedUrl} alt='Tessera renderizzata' style={{display:'block', width:'100%', imageRendering:'pixelated'}} />
+                      </div>
+                    </div>
+                    <div>
+                      <b>Foto origine della tessera</b>
+                      <div style={{marginTop:8, borderRadius:16, overflow:'hidden', border:'1px solid rgba(0,0,0,.08)', background:'#fff'}}>
+                        <img src={selectedPreviewTile.originalUrl} alt='Foto origine tessera' style={{display:'block', width:'100%'}} />
+                      </div>
+                    </div>
+                    <div>
+                      <b>Colore target della cella</b>
+                      <div style={{marginTop:8, height:120, borderRadius:16, border:'1px solid rgba(0,0,0,.08)', background:`rgb(${selectedPreviewTile.targetColor[0]}, ${selectedPreviewTile.targetColor[1]}, ${selectedPreviewTile.targetColor[2]})`}} />
+                      <div className='small' style={{marginTop:8}}>RGB: {selectedPreviewTile.targetColor.join(', ')}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {targetCropOpen && targetCropState && (
           <div style={{position:'fixed', inset:0, zIndex:70, background:'rgba(15,10,8,.82)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
