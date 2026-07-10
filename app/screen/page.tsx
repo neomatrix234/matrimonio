@@ -551,13 +551,13 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
       const B=targetChannel/255;
       const A=gray;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      // Meno aggressivo: il target continua a guidare la cella,
-      // ma la fotografia della tessera resta più riconoscibile.
-      const wTarget=0.66 + (1-midMask)*0.12;
-      const wSoft=0.15 + midMask*0.05;
-      const wPhotoLum=0.07 + midMask*0.08;
+      // Più visibilità alla foto originale: il target colora e guida la forma,
+      // ma la tessera originale resta molto più leggibile sotto.
+      const wTarget=0.46 + (1-midMask)*0.08;
+      const wSoft=0.16 + midMask*0.06;
+      const wPhotoLum=0.16 + midMask*0.10;
       const fused=clamp01(B*wTarget + soft*wSoft + A*wPhotoLum);
-      const keepOriginal=0.14;
+      const keepOriginal=0.30;
       return clamp(Math.round((fused*(1-keepOriginal) + (sourceChannel/255)*keepOriginal)*255));
     };
 
@@ -579,17 +579,27 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     for(let i=0;i<xd.length;i+=4){
       const lum=luminance([xd[i],xd[i+1],xd[i+2]]);
       const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=50;
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=62;
     }
     textureCtx.putImageData(ximg,0,0);
     ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=0.12;
+    ctx.globalAlpha=0.16;
+    ctx.drawImage(textureCanvas,0,0,size,size);
+    ctx.globalCompositeOperation='multiply';
+    ctx.globalAlpha=0.07;
     ctx.drawImage(textureCanvas,0,0,size,size);
   }
 
-  // Ultimo richiamo della vera patch target sopra la tessera.
+  // Overlay della vera immagine target come trasparenza sopra la tessera: 
+  // deve vedersi la forma originale della cella, ma restando leggibile la foto sotto.
+  ctx.globalCompositeOperation='soft-light';
+  ctx.globalAlpha=0.18;
+  ctx.drawImage(targetCanvas,0,0,size,size);
+  ctx.globalCompositeOperation='color';
+  ctx.globalAlpha=0.12;
+  ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=0.06;
+  ctx.globalAlpha=0.08;
   ctx.drawImage(targetCanvas,0,0,size,size);
   ctx.globalAlpha=1;
 

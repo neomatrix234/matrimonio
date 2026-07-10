@@ -513,17 +513,46 @@ async function createPreviewMosaicTile(
     const blend=(tc:number, sc:number)=>{
       const B=tc/255;
       const soft=(1-2*B)*(A*A)+2*B*A;
-      const wTarget=0.66+(1-midMask)*0.12;
-      const wSoft=0.15+midMask*0.05;
-      const wPhotoLum=0.07+midMask*0.08;
+      const wTarget=0.46+(1-midMask)*0.08;
+      const wSoft=0.16+midMask*0.06;
+      const wPhotoLum=0.16+midMask*0.10;
       const fused=clamp01(B*wTarget+soft*wSoft+A*wPhotoLum);
-      const keepOriginal=0.14;
+      const keepOriginal=0.30;
       return clamp(Math.round((fused*(1-keepOriginal)+(sc/255)*keepOriginal)*255));
     };
     d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
   }
   ctx.putImageData(source,0,0);
-  ctx.globalAlpha=0.06;
+
+  const textureCanvas=document.createElement('canvas');
+  textureCanvas.width=renderSize;
+  textureCanvas.height=renderSize;
+  const tx=textureCanvas.getContext('2d',{willReadFrequently:true});
+  if(tx){
+    tx.drawImage(sourceImg,crop.sx,crop.sy,crop.side,crop.side,0,0,renderSize,renderSize);
+    const ximg=tx.getImageData(0,0,renderSize,renderSize);
+    const xd=ximg.data;
+    for(let i=0;i<xd.length;i+=4){
+      const lum=(0.2126*xd[i]+0.7152*xd[i+1]+0.0722*xd[i+2])/255;
+      const gray=clamp(Math.round(lum*255));
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=62;
+    }
+    tx.putImageData(ximg,0,0);
+    ctx.globalCompositeOperation='soft-light';
+    ctx.globalAlpha=0.16;
+    ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
+    ctx.globalCompositeOperation='multiply';
+    ctx.globalAlpha=0.07;
+    ctx.drawImage(textureCanvas,0,0,renderSize,renderSize);
+  }
+  ctx.globalCompositeOperation='soft-light';
+  ctx.globalAlpha=0.18;
+  ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
+  ctx.globalCompositeOperation='color';
+  ctx.globalAlpha=0.12;
+  ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=0.08;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
   ctx.globalAlpha=1;
   return canvas;
@@ -576,19 +605,22 @@ async function createTargetDominantPreviewTile(sourceUrl:string, targetUrl:strin
     const lum=(0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) / 255;
     const gray=clamp(Math.round(255 * Math.pow(clamp01((lum-minLum)/range), 0.95)));
     d[i]=gray; d[i+1]=gray; d[i+2]=gray;
-    d[i+3]=58;
+    d[i+3]=68;
   }
   sctx.putImageData(srcImage,0,0);
 
-  octx.globalCompositeOperation='multiply';
-  octx.globalAlpha=0.22;
-  octx.drawImage(srcCanvas,0,0,size,size);
   octx.globalCompositeOperation='soft-light';
-  octx.globalAlpha=0.20;
+  octx.globalAlpha=0.17;
   octx.drawImage(srcCanvas,0,0,size,size);
+  octx.globalCompositeOperation='multiply';
+  octx.globalAlpha=0.08;
+  octx.drawImage(srcCanvas,0,0,size,size);
+  octx.globalCompositeOperation='color';
+  octx.globalAlpha=0.10;
+  octx.drawImage(patchCanvas,0,0,size,size);
   octx.globalCompositeOperation='source-over';
-  octx.globalAlpha=0.12;
-  octx.drawImage(srcCanvas,0,0,size,size);
+  octx.globalAlpha=0.08;
+  octx.drawImage(patchCanvas,0,0,size,size);
   octx.globalAlpha=1;
 
   return { tileUrl: outCanvas.toDataURL('image/jpeg', 0.94), targetPatchUrl };
