@@ -549,8 +549,8 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
     wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
     textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
   } : {
-    wTargetBase:0.33, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.48,
-    textureSoft:0.08, textureMultiply:0.03, overlaySoft:0.05, overlayColor:0.07, overlaySource:0.02
+    wTargetBase:0.42, wTargetEdge:0.06, wSoft:0.16, wPhotoLum:0.17, keepOriginal:0.36,
+    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.10, overlayColor:0.14, overlaySource:0.07
   };
 
   for(let i=0;i<d.length;i+=4){
@@ -616,6 +616,11 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=mode.overlaySource;
   ctx.drawImage(targetCanvas,0,0,size,size);
+  if(style === 'portraitOverlay'){
+    ctx.globalCompositeOperation='overlay';
+    ctx.globalAlpha=0.08;
+    ctx.drawImage(targetCanvas,0,0,size,size);
+  }
   ctx.globalAlpha=1;
 
   return canvas.toDataURL('image/jpeg', .92);
@@ -1028,8 +1033,8 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
-          {targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.34, 0.10 + (pct/100)*0.24), pointerEvents:'none', userSelect:'none'}} />}
-          {targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.18, 0.05 + (pct/100)*0.13), pointerEvents:'none', userSelect:'none'}} />}
+          {targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.46, 0.16 + (pct/100)*0.30), pointerEvents:'none', userSelect:'none'}} />}
+          {targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.22, 0.06 + (pct/100)*0.16), pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'

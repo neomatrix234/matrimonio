@@ -187,7 +187,7 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.34 : 0.18;
+  const opacity = style === 'portraitOverlay' ? 0.44 : 0.20;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = opacity;
@@ -527,8 +527,8 @@ async function createPreviewMosaicTile(
     wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
     textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
   } : {
-    wTargetBase:0.33, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.48,
-    textureSoft:0.08, textureMultiply:0.03, overlaySoft:0.05, overlayColor:0.07, overlaySource:0.02
+    wTargetBase:0.42, wTargetEdge:0.06, wSoft:0.16, wPhotoLum:0.17, keepOriginal:0.36,
+    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.10, overlayColor:0.14, overlaySource:0.07
   };
 
   for(let i=0;i<d.length;i+=4){
@@ -582,6 +582,11 @@ async function createPreviewMosaicTile(
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=mode.overlaySource;
   ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
+  if(style === 'portraitOverlay'){
+    ctx.globalCompositeOperation='overlay';
+    ctx.globalAlpha=0.08;
+    ctx.drawImage(targetCanvas,0,0,renderSize,renderSize);
+  }
   ctx.globalAlpha=1;
   return canvas;
 }
@@ -1256,11 +1261,11 @@ export default function AdminPage(){
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:14}}>
           <button type="button" onClick={()=>setMosaicStyle('portraitOverlay')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicStyle==='portraitOverlay'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicStyle==='portraitOverlay'?'#fff3f4':'#fff', cursor:'pointer'}}>
             <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Ritratto morbido</div>
-            <div className="small">Più vicino all'esempio della donna. La foto finale emerge bene, ma si leggono ancora le tessere.</div>
+            <div className="small">Più vicino all'esempio della donna: immagine finale molto leggibile, ma con foto tessere ancora visibili dentro.</div>
           </button>
           <button type="button" onClick={()=>setMosaicStyle('classicTiles')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicStyle==='classicTiles'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicStyle==='classicTiles'?'#fff3f4':'#fff', cursor:'pointer'}}>
             <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Tessere evidenti</div>
-            <div className="small">Stile più a mosaico classico: la singola foto si nota di più e la griglia è più presente.</div>
+            <div className="small">Stile più a mosaico classico: si notano di più le singole foto e la griglia resta più evidente.</div>
           </button>
         </div>
         <div className="spacer"/><h2>Quantità tessere in composizione</h2>
