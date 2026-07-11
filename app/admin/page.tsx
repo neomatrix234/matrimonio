@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-const options = [600, 800, 1000, 1200, 1500, 2000, 2500, 3000];
+const options = [200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000];
 
 type CropState = {
   src:string;

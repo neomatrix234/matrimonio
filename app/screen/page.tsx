@@ -959,22 +959,22 @@ export default function ScreenPage(){
       const nowFullscreen=Boolean(document.fullscreenElement);
       setIsFullscreen(nowFullscreen);
       if(wasFullscreen && !nowFullscreen){
-        // Primo ESC: esce dal pieno schermo e resta sulla pagina mosaico.
+        // Se si esce dal pieno schermo durante la creazione, torna subito in admin.
         setEscapedFullscreen(true);
+        window.location.href='/admin';
+        return;
       }
       if(nowFullscreen) setEscapedFullscreen(false);
       wasFullscreen=nowFullscreen;
     };
     const onKeyDown=(e:KeyboardEvent)=>{
       if(e.key !== 'Escape') return;
-      if(document.fullscreenElement) return; // il browser gestisce il primo ESC
       if(selectedTile){
         setSelectedTile(null);
         return;
       }
-      if(escapedFullscreen){
-        window.location.href='/admin';
-      }
+      if(document.fullscreenElement) return; // il browser esce dal pieno schermo, poi fullscreenchange riporta in admin
+      window.location.href='/admin';
     };
     document.addEventListener('fullscreenchange',fs);
     window.addEventListener('keydown',onKeyDown);
@@ -1033,8 +1033,8 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
-          {targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.46, 0.16 + (pct/100)*0.30), pointerEvents:'none', userSelect:'none'}} />}
-          {targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.22, 0.06 + (pct/100)*0.16), pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.46, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.22, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
