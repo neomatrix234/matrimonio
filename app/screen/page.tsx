@@ -570,6 +570,9 @@ export default function ScreenPage(){
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
   const [mosaicTileDensity,setMosaicTileDensity]=useState<MosaicTileDensity>('100');
   const [showFsStop,setShowFsStop]=useState(false);
+  const [viewZoom,setViewZoom]=useState(1);
+  const [viewPan,setViewPan]=useState({x:0,y:0});
+  const [isPanning,setIsPanning]=useState(false);
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -580,6 +583,9 @@ export default function ScreenPage(){
   const currentTargetUrlRef=useRef('');
   const currentRun=useRef(0);
   const fsUiTimer=useRef<any>(null);
+  const activeTotalRef=useRef<number>(0);
+  const panDragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number;moved:boolean}|null>(null);
+  const suppressTileClickRef=useRef(false);
 
   useEffect(()=>{
     if(typeof window==='undefined') return;
@@ -596,6 +602,58 @@ export default function ScreenPage(){
     window.addEventListener('storage', onStorage);
     return ()=>window.removeEventListener('storage', onStorage);
   }, []);
+
+  function resetMosaicView(){
+    setViewZoom(1);
+    setViewPan({x:0,y:0});
+  }
+
+  function onMosaicWheel(e:React.WheelEvent<HTMLDivElement>){
+    e.preventDefault();
+    const rect=e.currentTarget.getBoundingClientRect();
+    const cx=e.clientX-rect.left-rect.width/2;
+    const cy=e.clientY-rect.top-rect.height/2;
+    const oldZoom=viewZoom;
+    const factor=e.deltaY<0 ? 1.14 : 1/1.14;
+    const nextZoom=Math.max(0.45,Math.min(8,oldZoom*factor));
+    const localX=(cx-viewPan.x)/oldZoom;
+    const localY=(cy-viewPan.y)/oldZoom;
+    setViewPan({x:cx-localX*nextZoom,y:cy-localY*nextZoom});
+    setViewZoom(nextZoom);
+    if(isFullscreen){
+      setShowFsStop(true);
+      if(fsUiTimer.current) clearTimeout(fsUiTimer.current);
+      fsUiTimer.current=setTimeout(()=>setShowFsStop(false),1800);
+    }
+  }
+
+  function onMosaicPointerDown(e:React.PointerEvent<HTMLDivElement>){
+    if(e.button!==0 && e.button!==1) return;
+    panDragRef.current={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,originX:viewPan.x,originY:viewPan.y,moved:false};
+    setIsPanning(true);
+    try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
+  }
+
+  function onMosaicPointerMove(e:React.PointerEvent<HTMLDivElement>){
+    const drag=panDragRef.current;
+    if(!drag || drag.pointerId!==e.pointerId) return;
+    const dx=e.clientX-drag.startX;
+    const dy=e.clientY-drag.startY;
+    if(Math.abs(dx)+Math.abs(dy)>5) drag.moved=true;
+    setViewPan({x:drag.originX+dx,y:drag.originY+dy});
+  }
+
+  function onMosaicPointerUp(e:React.PointerEvent<HTMLDivElement>){
+    const drag=panDragRef.current;
+    if(!drag || drag.pointerId!==e.pointerId) return;
+    if(drag.moved){
+      suppressTileClickRef.current=true;
+      setTimeout(()=>{suppressTileClickRef.current=false;},0);
+    }
+    panDragRef.current=null;
+    setIsPanning(false);
+    try{e.currentTarget.releasePointerCapture(e.pointerId);}catch{}
+  }
 
   function targetImageUrl(s:any){
     if(!s?.targetFileId) return '';
@@ -778,6 +836,21 @@ export default function ScreenPage(){
 
       const configuredTotal = s.totalTiles || 600;
       const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
+      if(activeTotalRef.current !== total){
+        currentRun.current += 1;
+        activeTotalRef.current = total;
+        processing.current = false;
+        usedIndexes.current = new Set();
+        assignedPhotoByIndex.current = new Map();
+        targetCellsRef.current = [];
+        resetPhotoUseCounts();
+        setTiles([]);
+        setFinal(false);
+        setCompleteMsg(false);
+        setReplayStarted(false);
+        setPaused(false);
+        resetMosaicView();
+      }
       if(s.targetFileId){
         const targetUrl = targetImageUrl(s);
         currentTargetUrlRef.current = targetUrl;
@@ -894,6 +967,7 @@ export default function ScreenPage(){
       }
       if(nowFullscreen){
         setEscapedFullscreen(false);
+        resetMosaicView();
       }
       wasFullscreen=nowFullscreen;
     };
@@ -950,7 +1024,14 @@ export default function ScreenPage(){
         </div>
       </div>}
 
-      <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:isFullscreen ? 0 : 24,boxSizing:'border-box'}}>
+      <div
+        onWheel={onMosaicWheel}
+        onPointerDown={onMosaicPointerDown}
+        onPointerMove={onMosaicPointerMove}
+        onPointerUp={onMosaicPointerUp}
+        onPointerCancel={onMosaicPointerUp}
+        style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',padding:isFullscreen ? 0 : 24,boxSizing:'border-box',overflow:'hidden',cursor:isPanning?'grabbing':'grab',touchAction:'none'}}
+      >
         <div style={{
           position:'relative',
           width:isFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
@@ -959,13 +1040,17 @@ export default function ScreenPage(){
           background:'#202020',
           borderRadius:isFullscreen ? 0 : 10,
           overflow:'hidden',
-          boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009'
+          boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009',
+          transform:`translate(${viewPan.x}px, ${viewPan.y}px) scale(${viewZoom})`,
+          transformOrigin:'center center',
+          transition:isPanning?'none':'transform 80ms linear',
+          willChange:'transform'
         }}>
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
               return <div key={i} style={{background:'#222',border:isFullscreen?'1px solid rgba(0,0,0,.20)':'1px solid rgba(255,255,255,.06)',overflow:'hidden', boxSizing:'border-box'}}>
-                {t && <button className="tileButton" onClick={()=>setSelectedTile(t)} title="Vedi foto">
+                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto">
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
               </div>
@@ -1003,9 +1088,12 @@ export default function ScreenPage(){
       </div>}
 
       {isFullscreen && showFsStop && (
-        <button onClick={stopMosaic} style={{position:'fixed', right:18, bottom:18, zIndex:20, border:'none', borderRadius:999, padding:'12px 18px', background:'rgba(125,15,34,.92)', color:'#fff', fontWeight:800, boxShadow:'0 10px 30px rgba(0,0,0,.35)', cursor:'pointer'}}>
-          Interrompi
-        </button>
+        <div style={{position:'fixed',right:18,bottom:18,zIndex:20,display:'flex',gap:8,alignItems:'center'}}>
+          <button onClick={()=>setViewZoom(z=>Math.max(0.45,z/1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>-</button>
+          <button onClick={resetMosaicView} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>{Math.round(viewZoom*100)}%</button>
+          <button onClick={()=>setViewZoom(z=>Math.min(8,z*1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>+</button>
+          <button onClick={stopMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(125,15,34,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Interrompi</button>
+        </div>
       )}
 
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
