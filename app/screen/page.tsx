@@ -33,6 +33,7 @@ type TargetCell = {
 };
 
 type MosaicRenderStyle = 'portraitOverlay' | 'classicTiles';
+type MosaicTileDensity = '100' | '75' | '60';
 
 type Tile = {
   id:string;
@@ -126,6 +127,11 @@ function gridForTotal(total:number, aspect:number=1.5){
   }
 
   return { cols: bestCols, rows: bestRows };
+}
+
+function effectiveTileTotal(total:number, density:MosaicTileDensity='100'){
+  const factor = density === '60' ? 0.60 : density === '75' ? 0.75 : 1;
+  return Math.max(24, Math.round(total * factor));
 }
 
 async function getImageAspect(url:string): Promise<number>{
@@ -630,6 +636,7 @@ export default function ScreenPage(){
   const [targetAspect,setTargetAspect]=useState(1.5);
   const [escapedFullscreen,setEscapedFullscreen]=useState(false);
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
+  const [mosaicTileDensity,setMosaicTileDensity]=useState<MosaicTileDensity>('100');
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -644,9 +651,13 @@ export default function ScreenPage(){
     if(typeof window==='undefined') return;
     const saved = window.localStorage.getItem('fm_mosaic_style');
     if(saved === 'portraitOverlay' || saved === 'classicTiles') setMosaicStyle(saved);
+    const savedDensity = window.localStorage.getItem('fm_mosaic_tile_density');
+    if(savedDensity === '100' || savedDensity === '75' || savedDensity === '60') setMosaicTileDensity(savedDensity);
     const onStorage = () => {
       const next = window.localStorage.getItem('fm_mosaic_style');
       if(next === 'portraitOverlay' || next === 'classicTiles') setMosaicStyle(next);
+      const nextDensity = window.localStorage.getItem('fm_mosaic_tile_density');
+      if(nextDensity === '100' || nextDensity === '75' || nextDensity === '60') setMosaicTileDensity(nextDensity);
     };
     window.addEventListener('storage', onStorage);
     return ()=>window.removeEventListener('storage', onStorage);
@@ -831,7 +842,8 @@ export default function ScreenPage(){
       if(!s.ok) return;
       setStatus(s);
 
-      const total=s.totalTiles || 600;
+      const configuredTotal = s.totalTiles || 600;
+      const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
       if(s.targetFileId){
         const targetUrl = targetImageUrl(s);
         currentTargetUrlRef.current = targetUrl;
@@ -966,9 +978,10 @@ export default function ScreenPage(){
       document.removeEventListener('fullscreenchange',fs);
       window.removeEventListener('keydown',onKeyDown);
     };
-  },[replayStarted,final,paused,escapedFullscreen,selectedTile]);
+  },[replayStarted,final,paused,escapedFullscreen,selectedTile,mosaicTileDensity,mosaicStyle]);
 
-  const total=status?.totalTiles || 600;
+  const configuredTotal=status?.totalTiles || 600;
+  const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
   const {cols,rows}=gridForTotal(total, targetAspect);
   const cells=Array.from({length:total});
   const tileMap=new Map<number,Tile>();
@@ -986,7 +999,7 @@ export default function ScreenPage(){
             {count} / {total} tessere
           </div>
           <div style={{fontSize:15,color:'#ddd',marginTop:8}}>
-            {paused ? 'Mosaico interrotto' : status?.hasTarget ? 'Motore target-dominant: patch matching + LAB/CIEDE2000 · la porzione target prevale dentro ogni tessera' : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
+            {paused ? 'Mosaico interrotto' : status?.hasTarget ? `Stile: ${mosaicStyle==='portraitOverlay' ? 'Ritratto morbido' : 'Tessere evidenti'} · composizione ${total}/${configuredTotal} tessere` : 'Carica foto finale da /admin'} · {pct}% · foto caricate: {photoCount}
           </div>
         </div>
         <div style={{background:'#ffffff18',border:'1px solid #ffffff33',borderRadius:999,padding:'10px 16px',fontSize:20}}>
@@ -1015,6 +1028,8 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
+          {targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.34, 0.10 + (pct/100)*0.24), pointerEvents:'none', userSelect:'none'}} />}
+          {targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:Math.min(0.18, 0.05 + (pct/100)*0.13), pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'

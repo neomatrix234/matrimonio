@@ -178,6 +178,23 @@ function qGrid(total:number, aspect:number=1.5){
   return {cols:bestCols, rows:bestRows};
 }
 
+function effectiveTileTotal(total:number, density:MosaicTileDensity='100'){
+  const factor = density === '60' ? 0.60 : density === '75' ? 0.75 : 1;
+  return Math.max(24, Math.round(total * factor));
+}
+async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, style:MosaicRenderStyle){
+  if(!targetUrl) return;
+  const img = await loadImg(targetUrl);
+  const ctx = canvas.getContext('2d');
+  if(!ctx) return;
+  const opacity = style === 'portraitOverlay' ? 0.34 : 0.18;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  ctx.restore();
+}
+
 async function qImageAspect(url:string){
   const img=await qLoadImg(url);
   const w=img.naturalWidth||img.width||1;
@@ -270,6 +287,7 @@ type PreviewFeature = { id:string; url:string; avg:Rgb; lab:Lab; lum:number; sat
 type PreviewCell = { index:number; color:Rgb; lab:Lab; lum:number; sat:number; importance:number };
 type PreviewTileData = { index:number; row:number; col:number; originalUrl:string; renderedUrl:string; targetColor:Rgb; };
 type MosaicRenderStyle = 'portraitOverlay' | 'classicTiles';
+type MosaicTileDensity = '100' | '75' | '60';
 
 function gridForTotal(total:number, aspect:number=1.5){
   const safeAspect = Math.max(0.35, Math.min(3, aspect || 1.5));
@@ -686,17 +704,24 @@ export default function AdminPage(){
   const [selectedPreviewTargetPatchUrl,setSelectedPreviewTargetPatchUrl]=useState('');
   const [selectedPreviewLoading,setSelectedPreviewLoading]=useState(false);
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
+  const [mosaicTileDensity,setMosaicTileDensity]=useState<MosaicTileDensity>('100');
 
   useEffect(()=>{ targetCropStateRef.current = targetCropState; }, [targetCropState]);
   useEffect(()=>{
     if(typeof window==='undefined') return;
     const saved = window.localStorage.getItem('fm_mosaic_style');
     if(saved === 'portraitOverlay' || saved === 'classicTiles') setMosaicStyle(saved);
+    const savedDensity = window.localStorage.getItem('fm_mosaic_tile_density');
+    if(savedDensity === '100' || savedDensity === '75' || savedDensity === '60') setMosaicTileDensity(savedDensity);
   }, []);
   useEffect(()=>{
     if(typeof window==='undefined') return;
     window.localStorage.setItem('fm_mosaic_style', mosaicStyle);
   }, [mosaicStyle]);
+  useEffect(()=>{
+    if(typeof window==='undefined') return;
+    window.localStorage.setItem('fm_mosaic_tile_density', mosaicTileDensity);
+  }, [mosaicTileDensity]);
 
   useEffect(()=>{
     const onEscape=(e:KeyboardEvent)=>{
@@ -992,11 +1017,13 @@ export default function AdminPage(){
       if(!data?.targetFileId) throw new Error('Carica prima la foto finale.');
       const photos=(data?.photos||[]).slice();
       if(!photos.length) throw new Error('Carica prima alcune foto invitati o usa Upload test.');
-      const total=Number(data?.totalTiles||600);
+      const configuredTotal=Number(data?.totalTiles||600);
+      const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
       const targetUrlLocal=`/api/image?id=${data.targetFileId}&v=${data?.target?.updated||Date.now()}`;
       const aspect=await qImageAspect(targetUrlLocal);
-      const {cols,rows}=qGrid(total,aspect);
-      const tileSize = total >= 1800 ? 14 : total >= 1000 ? 15 : 16;
+      const quickTotal = total <= 600 ? Math.max(240, Math.round(total * 0.72)) : total <= 1200 ? Math.max(420, Math.round(total * 0.64)) : Math.max(620, Math.round(total * 0.56));
+      const {cols,rows}=qGrid(quickTotal,aspect);
+      const tileSize = quickTotal >= 1800 ? 14 : quickTotal >= 1000 ? 15 : 16;
       setPreviewFastMeta({cols,rows,cellSize:tileSize});
       const previewTiles:PreviewTileData[]=[];
       const canvas=document.createElement('canvas');
@@ -1058,10 +1085,10 @@ export default function AdminPage(){
         }
       }
 
-      // Nessuna sovrapposizione globale: l’anteprima mostra solo le tessere realmente elaborate.
+      await applyFinalOverlay(canvas, targetUrlLocal, mosaicStyle);
       setPreviewFastTiles(previewTiles);
       setPreviewFastUrl(canvas.toDataURL('image/jpeg',.90));
-      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Ora è più leggibile, ma il mosaico reale resta impostato a ${total} tessere. Puoi aprirla a schermo intero e cliccare ogni tessera.`);
+      setPreviewText(`Anteprima rapida pronta: ${cols}×${rows} (${cols*rows} tessere simulate). Composizione attiva: ${total} tessere effettive su ${configuredTotal} impostate. Puoi aprirla a schermo intero e cliccare ogni tessera.`);
       showAdminMsg('Anteprima rapida pronta.');
     }catch(e:any){
       setErr(e?.message||'Errore anteprima rapida');
@@ -1081,7 +1108,8 @@ export default function AdminPage(){
       if(!data?.targetFileId) throw new Error('Carica prima la foto finale da riprodurre.');
       const photos:PreviewPhoto[] = (data?.photos || []).slice();
       if(!photos.length) throw new Error('Non ci sono ancora foto invitati caricate.');
-      const total = Number(data?.totalTiles || 600);
+      const configuredTotal = Number(data?.totalTiles || 600);
+      const total = effectiveTileTotal(configuredTotal, mosaicTileDensity);
       const cellSize = total >= 2500 ? 10 : total >= 1500 ? 11 : total >= 1000 ? 12 : 14;
 
       const targetUrlLocal = `/api/image?id=${data.targetFileId}&v=${data?.target?.updated || Date.now()}`;
@@ -1156,9 +1184,10 @@ export default function AdminPage(){
         }
       }
 
+      await applyFinalOverlay(canvas, targetUrlLocal, mosaicStyle);
       setPreviewFullTiles(previewTiles);
       setPreviewUrl(canvas.toDataURL('image/jpeg', 0.92));
-      setPreviewProgress(`Anteprima pronta: ${used.size} tessere renderizzate. Puoi aprirla a schermo intero e cliccare ogni tessera.`);
+      setPreviewProgress(`Anteprima pronta: ${used.size} tessere renderizzate. Composizione attiva: ${total} tessere effettive su ${configuredTotal} impostate.`);
       showAdminMsg('Anteprima mosaico generata.');
     }catch(e:any){
       setErr(e?.message || 'Errore creazione anteprima');
@@ -1234,8 +1263,25 @@ export default function AdminPage(){
             <div className="small">Stile più a mosaico classico: la singola foto si nota di più e la griglia è più presente.</div>
           </button>
         </div>
+        <div className="spacer"/><h2>Quantità tessere in composizione</h2>
+        <p>Se vuoi vedere meglio le singole foto, puoi usare una composizione con meno tessere visive. L'immagine finale resta più leggibile grazie alla sovrapposizione finale.</p>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:14}}>
+          <button type="button" onClick={()=>setMosaicTileDensity('100')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicTileDensity==='100'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicTileDensity==='100'?'#fff3f4':'#fff', cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Normale</div>
+            <div className="small">Usa tutte le tessere impostate.</div>
+          </button>
+          <button type="button" onClick={()=>setMosaicTileDensity('75')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicTileDensity==='75'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicTileDensity==='75'?'#fff3f4':'#fff', cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Meno tessere</div>
+            <div className="small">Usa circa il 75% delle tessere: foto un po' più grandi.</div>
+          </button>
+          <button type="button" onClick={()=>setMosaicTileDensity('60')} style={{textAlign:'left', padding:'16px 18px', borderRadius:18, border:mosaicTileDensity==='60'?'2px solid #7d0f22':'1px solid rgba(0,0,0,.12)', background:mosaicTileDensity==='60'?'#fff3f4':'#fff', cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:18, marginBottom:6}}>Molte meno tessere</div>
+            <div className="small">Usa circa il 60% delle tessere: foto più grandi e più leggibili.</div>
+          </button>
+        </div>
+        <div className="small" style={{marginTop:8}}>Attualmente: <b>{effectiveTileTotal(Number(data?.totalTiles || 600), mosaicTileDensity)}</b> tessere effettive su <b>{Number(data?.totalTiles || 600)}</b> impostate.</div>
         <div className="spacer"/><h2>Anteprima risultato finale del mosaico</h2>
-        <p>Da qui puoi vedere prima il risultato finale del tuo fotomosaico. L’anteprima usa lo stile selezionato qui sopra. Quando clicchi una tessera, si apre la <b>foto originale</b> che compone quella cella.</p>
+        <p>Da qui puoi vedere prima il risultato finale del tuo fotomosaico. L’anteprima usa lo stile e la quantità di tessere selezionati qui sopra. Quando clicchi una tessera, si apre la <b>foto originale</b> che compone quella cella.</p>
         <div className="gridBtns">
           <button className="btn" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildQuickPreview}>{previewRunning ? 'Creo anteprima rapida...' : 'Anteprima rapida'}</button>
           <button className="btn secondary" disabled={previewRunning || previewBusy || busy || !data?.hasTarget || !data?.receivedCount} onClick={buildAdminPreview}>{previewBusy ? 'Creo qualità completa...' : 'Anteprima qualità completa'}</button>
