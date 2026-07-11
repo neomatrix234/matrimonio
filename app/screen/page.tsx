@@ -86,7 +86,7 @@ const PROFESSIONAL_MOSAIC = {
   tintOpacity: 0.12,
   preserveOriginal: 0.06,
   targetSampleFactor: 8,
-  tileCanvasSize: 190,
+  tileCanvasSize: 320,
   patchSize: 10,
   patternWeight: 6.4,
 };
@@ -192,19 +192,19 @@ function tileMotionStyle(order:number, index:number, cols:number, rows:number){
   const ry=(seed2/233280)*2-1;
   const r2=(seed3/233280)*2-1;
   const r3=(seed4/233280)*2-1;
-  const edge=(index%4);
-  const startX=Math.round((edge===0?-1:edge===1?1:rx)*window.innerWidth*0.48 + rx*180);
-  const startY=Math.round((edge===2?-1:edge===3?1:ry)*window.innerHeight*0.42 + ry*150);
-  const fly1X=Math.round((rx*0.55+r2*0.45)*window.innerWidth*0.34);
-  const fly1Y=Math.round((ry*0.45-r2*0.55)*window.innerHeight*0.26);
-  const fly2X=Math.round((-rx*0.35+r3*0.65)*window.innerWidth*0.22);
-  const fly2Y=Math.round((-ry*0.35-r3*0.65)*window.innerHeight*0.18);
-  const settleX=Math.round((r2-r3)*34);
-  const settleY=Math.round((r3+rx)*24);
-  const rotA=Math.round(rx*42);
-  const rotB=Math.round((rx-ry)*32);
-  const rotC=Math.round((r2+r3)*18);
-  const delay=Math.min(3.2, order*0.022);
+  const side=(index%4);
+  const startX=Math.round((side===0?-1:side===1?1:rx) * window.innerWidth * 0.62 + rx*240);
+  const startY=Math.round((side===2?-1:side===3?1:ry) * window.innerHeight * 0.56 + ry*200);
+  const fly1X=Math.round((rx*0.7+r2*0.3) * window.innerWidth * 0.42);
+  const fly1Y=Math.round((ry*0.6-r2*0.4) * window.innerHeight * 0.34);
+  const fly2X=Math.round((-rx*0.45+r3*0.55) * window.innerWidth * 0.28);
+  const fly2Y=Math.round((-ry*0.3-r3*0.7) * window.innerHeight * 0.24);
+  const settleX=Math.round((r2-r3)*42);
+  const settleY=Math.round((r3+rx)*28);
+  const rotA=Math.round(rx*55);
+  const rotB=Math.round((rx-ry)*40);
+  const rotC=Math.round((r2+r3)*24);
+  const delay=Math.min(3.5, order*0.024);
   return {
     ['--from-x' as any]: `${startX}px`,
     ['--from-y' as any]: `${startY}px`,
@@ -217,7 +217,9 @@ function tileMotionStyle(order:number, index:number, cols:number, rows:number){
     ['--rot-a' as any]: `${rotA}deg`,
     ['--rot-b' as any]: `${rotB}deg`,
     ['--rot-c' as any]: `${rotC}deg`,
-    animation: `tileAssemble 3.6s cubic-bezier(.16,.82,.22,1) ${delay}s both`
+    animation: `tileAssemble 4.4s cubic-bezier(.14,.82,.22,1) ${delay}s both`,
+    zIndex: 5,
+    willChange:'transform, opacity'
   } as React.CSSProperties;
 }
 
@@ -681,6 +683,7 @@ export default function ScreenPage(){
   const [replayStarted,setReplayStarted]=useState(false);
   const [paused,setPaused]=useState(false);
   const [selectedTile,setSelectedTile]=useState<Tile|null>(null);
+  const [selectedTileZoom,setSelectedTileZoom]=useState(1);
   const [targetAspect,setTargetAspect]=useState(1.5);
   const [escapedFullscreen,setEscapedFullscreen]=useState(false);
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
@@ -1208,6 +1211,9 @@ export default function ScreenPage(){
   const cells=Array.from({length:total});
   const tileMap=new Map<number,Tile>();
   tiles.forEach(t=>tileMap.set(t.index,t));
+
+  useEffect(()=>{ if(selectedTile) setSelectedTileZoom(1); }, [selectedTile]);
+
   const targetUrl=targetImageUrl(status);
   const count=tiles.length;
   const pct=Math.min(100,Math.round((count/total)*100));
@@ -1244,23 +1250,23 @@ export default function ScreenPage(){
           aspectRatio:isFullscreen ? undefined : `${cols}/${rows}`,
           background:'#0f1115',
           borderRadius:isFullscreen ? 0 : 10,
-          overflow:'hidden',
+          overflow: final ? 'hidden' : 'visible',
           boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009',
           transform:`translate(${viewPan.x}px, ${viewPan.y}px) scale(${viewZoom})`,
           transformOrigin:'center center',
           transition:isPanning?'none':'transform 80ms linear',
           willChange:'transform'
         }}>
-          {targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity: final ? (mosaicStyle==='portraitOverlay' ? 0.46 : 0.26) : (mosaicStyle==='portraitOverlay' ? 0.08 : 0.05), pointerEvents:'none', userSelect:'none'}} />}
+          {targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity: final ? (mosaicStyle==='portraitOverlay' ? 0.46 : 0.26) : 0, pointerEvents:'none', userSelect:'none'}} />}
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%', position:'relative', zIndex:2}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
               const code=cellCode(i, cols);
-              return <div key={i} style={{background:'rgba(255,255,255,.04)',border:isFullscreen?'0.25px solid rgba(255,255,255,.06)':'0.25px solid rgba(255,255,255,.05)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
+              return <div key={i} style={{background:'rgba(255,255,255,.04)',border:isFullscreen?'0.25px solid rgba(255,255,255,.06)':'0.25px solid rgba(255,255,255,.05)',overflow: final ? 'hidden' : 'visible', boxSizing:'border-box', position:'relative'}}>
                 {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto" style={tileMotionStyle(t.order, i, cols, rows)}>
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
-                <div className="tileCodeBadge">{code}</div>
+                <div className="tileCodeBadge" style={{opacity: final ? 0 : 1, transition:'opacity .5s ease'}}> {code} </div>
               </div>
             })}
           </div>
@@ -1309,8 +1315,15 @@ export default function ScreenPage(){
       )}
 
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
-        <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>e.stopPropagation()}>
-          <img src={selectedTile.url} alt="Foto originale tessera" style={{display:'block', maxWidth:'100%', maxHeight:'94vh', borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
+        <div style={{maxWidth:'96vw', maxHeight:'96vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <button onClick={()=>setSelectedTileZoom(z=>Math.max(0.5, z/1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>-</button>
+            <button onClick={()=>setSelectedTileZoom(1)} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>{Math.round(selectedTileZoom*100)}%</button>
+            <button onClick={()=>setSelectedTileZoom(z=>Math.min(8, z*1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>+</button>
+          </div>
+          <div onWheel={(e)=>{e.preventDefault(); setSelectedTileZoom(z=>Math.max(0.5, Math.min(8, e.deltaY < 0 ? z*1.12 : z/1.12)));}} style={{maxWidth:'96vw', maxHeight:'88vh', overflow:'auto', padding:8, cursor:'zoom-in'}}>
+            <img src={selectedTile.url} alt="Foto originale tessera" style={{display:'block', maxWidth:'none', maxHeight:'none', width:`${Math.max(320, selectedTileZoom*900)}px`, borderRadius:18, boxShadow:'0 24px 60px rgba(0,0,0,.45)'}} />
+          </div>
         </div>
       </div>}
 

@@ -187,7 +187,7 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.48 : 0.28;
+  const opacity = style === 'portraitOverlay' ? 0.56 : 0.32;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = opacity;
@@ -530,11 +530,11 @@ async function createPreviewMosaicTile(
   const range=Math.max(0.06,maxLum-minLum);
 
   const mode = style === 'classicTiles' ? {
-    wTargetBase:0.44, wTargetEdge:0.06, wSoft:0.13, wPhotoLum:0.18, keepOriginal:0.28,
-    textureSoft:0.05, textureMultiply:0.02, overlaySoft:0.06, overlayColor:0.08, overlaySource:0.03
+    wTargetBase:0.52, wTargetEdge:0.07, wSoft:0.14, wPhotoLum:0.16, keepOriginal:0.20,
+    textureSoft:0.04, textureMultiply:0.015, overlaySoft:0.08, overlayColor:0.10, overlaySource:0.04
   } : {
-    wTargetBase:0.74, wTargetEdge:0.10, wSoft:0.24, wPhotoLum:0.10, keepOriginal:0.08,
-    textureSoft:0.04, textureMultiply:0.015, overlaySoft:0.13, overlayColor:0.24, overlaySource:0.07
+    wTargetBase:0.82, wTargetEdge:0.11, wSoft:0.26, wPhotoLum:0.09, keepOriginal:0.04,
+    textureSoft:0.03, textureMultiply:0.01, overlaySoft:0.15, overlayColor:0.28, overlaySource:0.08
   };
 
   for(let i=0;i<d.length;i+=4){
@@ -1082,7 +1082,7 @@ export default function AdminPage(){
         }
         best.use++;
         assigned.set(i,best.id);
-        const tileCanvas=await createPreviewMosaicTile(best.url,targetUrlLocal,cols,rows,x,y,180,mosaicStyle);
+        const tileCanvas=await createPreviewMosaicTile(best.url,targetUrlLocal,cols,rows,x,y,260,mosaicStyle);
         ctx.drawImage(tileCanvas,x*tileSize,y*tileSize,tileSize,tileSize);
         previewTiles.push({
           index:i,
@@ -1175,7 +1175,7 @@ export default function AdminPage(){
         best.useCount += 1;
         const xNorm = cols <= 1 ? 0.5 : (cell.index % cols) / (cols - 1);
         const yNorm = rows <= 1 ? 0.5 : Math.floor(cell.index / cols) / (rows - 1);
-        const tileCanvas = await createPreviewMosaicTile(best.url, targetUrlLocal, cols, rows, cell.index % cols, Math.floor(cell.index / cols), 220, mosaicStyle);
+        const tileCanvas = await createPreviewMosaicTile(best.url, targetUrlLocal, cols, rows, cell.index % cols, Math.floor(cell.index / cols), 300, mosaicStyle);
         const x = (cell.index % cols) * cellSize;
         const y = Math.floor(cell.index / cols) * cellSize;
         ctx.drawImage(tileCanvas, x, y, cellSize, cellSize);

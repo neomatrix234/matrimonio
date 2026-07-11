@@ -1602,11 +1602,11 @@ pre{
   backdrop-filter:blur(1px);
 }
 @keyframes tileAssemble{
-  0%{ transform:translate(var(--from-x), var(--from-y)) rotate(var(--rot-a)) scale(.64); opacity:0; }
-  8%{ opacity:.95; }
-  26%{ transform:translate(var(--fly1-x), var(--fly1-y)) rotate(var(--rot-b)) scale(.92); }
-  48%{ transform:translate(calc(var(--fly1-x) * -.55), calc(var(--fly1-y) * -.55)) rotate(calc(var(--rot-c) * -1)) scale(1.02); }
-  68%{ transform:translate(var(--fly2-x), var(--fly2-y)) rotate(var(--rot-c)) scale(.98); }
-  82%{ transform:translate(var(--settle-x), var(--settle-y)) rotate(4deg) scale(1.04); opacity:1; }
-  100%{ transform:translate(0,0) rotate(0deg) scale(1); opacity:1; }
+  0%{ transform:perspective(1200px) translate3d(var(--from-x), var(--from-y), 420px) rotateX(28deg) rotateY(-20deg) rotate(var(--rot-a)) scale(.56); opacity:0; }
+  6%{ opacity:.98; }
+  24%{ transform:perspective(1200px) translate3d(var(--fly1-x), var(--fly1-y), 180px) rotateX(-18deg) rotateY(24deg) rotate(var(--rot-b)) scale(.84); }
+  46%{ transform:perspective(1200px) translate3d(calc(var(--fly1-x) * -.60), calc(var(--fly1-y) * -.60), 90px) rotateX(14deg) rotateY(-18deg) rotate(calc(var(--rot-c) * -1)) scale(1.02); }
+  66%{ transform:perspective(1200px) translate3d(var(--fly2-x), var(--fly2-y), 40px) rotateX(-10deg) rotateY(12deg) rotate(var(--rot-c)) scale(.98); }
+  84%{ transform:perspective(1200px) translate3d(var(--settle-x), var(--settle-y), 0px) rotateX(4deg) rotateY(-4deg) rotate(4deg) scale(1.04); opacity:1; }
+  100%{ transform:perspective(1200px) translate3d(0,0,0) rotateX(0) rotateY(0) rotate(0deg) scale(1); opacity:1; }
 }
