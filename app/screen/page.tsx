@@ -188,35 +188,43 @@ function tileMotionStyle(order:number, index:number, cols:number, rows:number){
   const seed2=((index+11)*5171 + (order+13)*28411) % 233280;
   const seed3=((index+31)*7129 + (order+23)*19373) % 233280;
   const seed4=((index+17)*1223 + (order+19)*41041) % 233280;
-  const r1=(seed/233280)*2-1;
-  const r2=(seed2/233280)*2-1;
-  const r3=(seed3/233280)*2-1;
-  const r4=(seed4/233280)*2-1;
+  const r1=(seed/233280);
+  const r2=(seed2/233280);
+  const r3=(seed3/233280);
+  const r4=(seed4/233280);
 
-  const col=index%cols;
-  const row=Math.floor(index/cols);
-  const nx=(col/Math.max(1,cols-1))*2-1;
-  const ny=(row/Math.max(1,rows-1))*2-1;
+  const angleBase=(r1*Math.PI*2) + (order*0.07);
+  const angle2=angleBase + Math.PI*(0.75 + r2*0.4);
+  const angle3=angleBase + Math.PI*(1.45 + r3*0.5);
 
-  // Ingresso da fuori campo e passaggi incrociati davanti allo schermo,
-  // con profondità 3D prima dell'aggancio alla cella definitiva.
-  const startX=Math.round((r1>=0?1:-1)*window.innerWidth*(0.62+Math.abs(r3)*0.22));
-  const startY=Math.round(r2*window.innerHeight*0.58);
-  const orbit1X=Math.round((-nx*0.55+r3*0.75)*window.innerWidth*0.38);
-  const orbit1Y=Math.round((-ny*0.45+r4*0.65)*window.innerHeight*0.34);
-  const orbit2X=Math.round((nx*0.32-r4*0.78)*window.innerWidth*0.31);
-  const orbit2Y=Math.round((ny*0.26-r3*0.74)*window.innerHeight*0.29);
-  const orbit3X=Math.round((-nx*0.18+r2*0.42)*window.innerWidth*0.16);
-  const orbit3Y=Math.round((-ny*0.16+r1*0.38)*window.innerHeight*0.14);
-  const settleX=Math.round(r3*46);
-  const settleY=Math.round(r4*34);
+  const radiusStart=Math.max(window.innerWidth, window.innerHeight) * (0.62 + r2*0.22);
+  const radius1=Math.max(window.innerWidth, window.innerHeight) * (0.26 + r3*0.14);
+  const radius2=Math.max(window.innerWidth, window.innerHeight) * (0.17 + r4*0.10);
+  const radius3=Math.max(window.innerWidth, window.innerHeight) * (0.08 + r1*0.06);
 
-  const rotA=Math.round(r1*120);
-  const rotB=Math.round(r2*90);
-  const rotC=Math.round(r3*70);
-  const rotD=Math.round(r4*42);
-  const delay=Math.min(4.2, order*0.018);
-  const duration=5.2 + Math.abs(r1)*1.1;
+  const startX=Math.round(Math.cos(angleBase)*radiusStart);
+  const startY=Math.round(Math.sin(angleBase)*radiusStart*0.55);
+  const orbit1X=Math.round(Math.cos(angleBase)*radius1);
+  const orbit1Y=Math.round(Math.sin(angleBase)*radius1*0.58);
+  const orbit2X=Math.round(Math.cos(angle2)*radius2);
+  const orbit2Y=Math.round(Math.sin(angle2)*radius2*0.58);
+  const orbit3X=Math.round(Math.cos(angle3)*radius3);
+  const orbit3Y=Math.round(Math.sin(angle3)*radius3*0.58);
+  const settleX=Math.round((r3-0.5)*44);
+  const settleY=Math.round((r4-0.5)*32);
+
+  const zStart=Math.round(760 + r1*520);
+  const z1=Math.round((-180 + r2*760));
+  const z2=Math.round((-260 + r3*620));
+  const z3=Math.round((-80 + r4*300));
+  const zSettle=Math.round(12 + r1*20);
+
+  const rotA=Math.round((r1-0.5)*220);
+  const rotB=Math.round((r2-0.5)*180);
+  const rotC=Math.round((r3-0.5)*140);
+  const rotD=Math.round((r4-0.5)*90);
+  const delay=Math.min(4.5, order*0.018);
+  const duration=5.6 + Math.abs(r1-0.5)*1.2;
 
   return {
     ['--from-x' as any]: `${startX}px`,
@@ -229,12 +237,17 @@ function tileMotionStyle(order:number, index:number, cols:number, rows:number){
     ['--orbit3-y' as any]: `${orbit3Y}px`,
     ['--settle-x' as any]: `${settleX}px`,
     ['--settle-y' as any]: `${settleY}px`,
+    ['--z-start' as any]: `${zStart}px`,
+    ['--z-1' as any]: `${z1}px`,
+    ['--z-2' as any]: `${z2}px`,
+    ['--z-3' as any]: `${z3}px`,
+    ['--z-settle' as any]: `${zSettle}px`,
     ['--rot-a' as any]: `${rotA}deg`,
     ['--rot-b' as any]: `${rotB}deg`,
     ['--rot-c' as any]: `${rotC}deg`,
     ['--rot-d' as any]: `${rotD}deg`,
     animation: `tileOrbitAssemble ${duration}s cubic-bezier(.18,.74,.16,1) ${delay}s both`,
-    zIndex: 40 + (index%20),
+    zIndex: 50 + Math.round(z1/40),
     transformStyle:'preserve-3d',
     backfaceVisibility:'visible',
     willChange:'transform, opacity, filter'
@@ -1156,10 +1169,11 @@ export default function ScreenPage(){
       const nowFullscreen=Boolean(document.fullscreenElement);
       setIsFullscreen(nowFullscreen);
       if(wasFullscreen && !nowFullscreen){
-        // ESC dal pieno schermo: torna sempre in Admin, senza interrompere il mosaico.
+        // ESC o uscita dal pieno schermo: resto nella pagina screen e il mosaico continua.
         setEscapedFullscreen(true);
-        setShowFsStop(false);
-        setTimeout(()=>goToAdmin(), 40);
+        setShowFsStop(true);
+        if(fsUiTimer.current) clearTimeout(fsUiTimer.current);
+        fsUiTimer.current=setTimeout(()=>setShowFsStop(false), 2200);
       }
       if(nowFullscreen){
         leavingForAdminRef.current=false;
@@ -1169,13 +1183,13 @@ export default function ScreenPage(){
       wasFullscreen=nowFullscreen;
     };
     const onKeyDown=(e:KeyboardEvent)=>{
-      if(e.key !== 'Escape' && e.key.toLowerCase() !== 'a') return;
+      if(e.key !== 'Escape') return;
       if(selectedTile){
         setSelectedTile(null);
         return;
       }
-      e.preventDefault();
-      goToAdmin();
+      // Se sono in fullscreen, ESC lo chiude normalmente senza andare in admin.
+      if(document.fullscreenElement) return;
     };
     const onMouseMove=()=>{
       if(!document.fullscreenElement) return;
@@ -1313,7 +1327,7 @@ export default function ScreenPage(){
 
       {!isFullscreen && <div className="screenBottomControls">
         <button onClick={()=>startReplay(total)}>Replay finale</button>
-        <button onClick={()=>{setEscapedFullscreen(false); document.documentElement.requestFullscreen();}}>Schermo intero</button>
+        <button onClick={toggleFullscreen}>{isFullscreen ? 'Esci schermo intero' : 'Schermo intero'}</button>
         <button onClick={goToAdmin}>Admin</button>
         <button className="danger" onClick={stopMosaic}>Interrompi</button>
         <button onClick={restartMosaic}>Riparti</button>
@@ -1324,7 +1338,7 @@ export default function ScreenPage(){
           <button onClick={()=>setViewZoom(z=>Math.max(0.45,z/1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>-</button>
           <button onClick={resetMosaicView} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>{Math.round(viewZoom*100)}%</button>
           <button onClick={()=>setViewZoom(z=>Math.min(8,z*1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>+</button>
-          <button onClick={goToAdmin} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(70,70,70,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Admin</button>
+          <button onClick={toggleFullscreen} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(70,70,70,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>{isFullscreen ? 'Esci schermo intero' : 'Schermo intero'}</button><button onClick={goToAdmin} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(70,70,70,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Admin</button>
           {!final && !paused && <button onClick={stopMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(125,15,34,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Interrompi</button>}
           {paused && <button onClick={restartMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(16,120,80,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Riparti</button>}
           {final && <button onClick={()=>startReplay(total)} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(30,90,180,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Replay</button>}
