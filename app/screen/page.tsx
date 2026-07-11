@@ -188,38 +188,56 @@ function tileMotionStyle(order:number, index:number, cols:number, rows:number){
   const seed2=((index+11)*5171 + (order+13)*28411) % 233280;
   const seed3=((index+31)*7129 + (order+23)*19373) % 233280;
   const seed4=((index+17)*1223 + (order+19)*41041) % 233280;
-  const rx=(seed/233280)*2-1;
-  const ry=(seed2/233280)*2-1;
-  const r2=(seed3/233280)*2-1;
-  const r3=(seed4/233280)*2-1;
-  const side=(index%4);
-  const startX=Math.round((side===0?-1:side===1?1:rx) * window.innerWidth * 0.62 + rx*240);
-  const startY=Math.round((side===2?-1:side===3?1:ry) * window.innerHeight * 0.56 + ry*200);
-  const fly1X=Math.round((rx*0.7+r2*0.3) * window.innerWidth * 0.42);
-  const fly1Y=Math.round((ry*0.6-r2*0.4) * window.innerHeight * 0.34);
-  const fly2X=Math.round((-rx*0.45+r3*0.55) * window.innerWidth * 0.28);
-  const fly2Y=Math.round((-ry*0.3-r3*0.7) * window.innerHeight * 0.24);
-  const settleX=Math.round((r2-r3)*42);
-  const settleY=Math.round((r3+rx)*28);
-  const rotA=Math.round(rx*55);
-  const rotB=Math.round((rx-ry)*40);
-  const rotC=Math.round((r2+r3)*24);
-  const delay=Math.min(3.5, order*0.024);
+  const r1=(seed/233280)*2-1;
+  const r2=(seed2/233280)*2-1;
+  const r3=(seed3/233280)*2-1;
+  const r4=(seed4/233280)*2-1;
+
+  const col=index%cols;
+  const row=Math.floor(index/cols);
+  const nx=(col/Math.max(1,cols-1))*2-1;
+  const ny=(row/Math.max(1,rows-1))*2-1;
+
+  // Ingresso da fuori campo e passaggi incrociati davanti allo schermo,
+  // con profondità 3D prima dell'aggancio alla cella definitiva.
+  const startX=Math.round((r1>=0?1:-1)*window.innerWidth*(0.62+Math.abs(r3)*0.22));
+  const startY=Math.round(r2*window.innerHeight*0.58);
+  const orbit1X=Math.round((-nx*0.55+r3*0.75)*window.innerWidth*0.38);
+  const orbit1Y=Math.round((-ny*0.45+r4*0.65)*window.innerHeight*0.34);
+  const orbit2X=Math.round((nx*0.32-r4*0.78)*window.innerWidth*0.31);
+  const orbit2Y=Math.round((ny*0.26-r3*0.74)*window.innerHeight*0.29);
+  const orbit3X=Math.round((-nx*0.18+r2*0.42)*window.innerWidth*0.16);
+  const orbit3Y=Math.round((-ny*0.16+r1*0.38)*window.innerHeight*0.14);
+  const settleX=Math.round(r3*46);
+  const settleY=Math.round(r4*34);
+
+  const rotA=Math.round(r1*120);
+  const rotB=Math.round(r2*90);
+  const rotC=Math.round(r3*70);
+  const rotD=Math.round(r4*42);
+  const delay=Math.min(4.2, order*0.018);
+  const duration=5.2 + Math.abs(r1)*1.1;
+
   return {
     ['--from-x' as any]: `${startX}px`,
     ['--from-y' as any]: `${startY}px`,
-    ['--fly1-x' as any]: `${fly1X}px`,
-    ['--fly1-y' as any]: `${fly1Y}px`,
-    ['--fly2-x' as any]: `${fly2X}px`,
-    ['--fly2-y' as any]: `${fly2Y}px`,
+    ['--orbit1-x' as any]: `${orbit1X}px`,
+    ['--orbit1-y' as any]: `${orbit1Y}px`,
+    ['--orbit2-x' as any]: `${orbit2X}px`,
+    ['--orbit2-y' as any]: `${orbit2Y}px`,
+    ['--orbit3-x' as any]: `${orbit3X}px`,
+    ['--orbit3-y' as any]: `${orbit3Y}px`,
     ['--settle-x' as any]: `${settleX}px`,
     ['--settle-y' as any]: `${settleY}px`,
     ['--rot-a' as any]: `${rotA}deg`,
     ['--rot-b' as any]: `${rotB}deg`,
     ['--rot-c' as any]: `${rotC}deg`,
-    animation: `tileAssemble 4.4s cubic-bezier(.14,.82,.22,1) ${delay}s both`,
-    zIndex: 5,
-    willChange:'transform, opacity'
+    ['--rot-d' as any]: `${rotD}deg`,
+    animation: `tileOrbitAssemble ${duration}s cubic-bezier(.18,.74,.16,1) ${delay}s both`,
+    zIndex: 40 + (index%20),
+    transformStyle:'preserve-3d',
+    backfaceVisibility:'visible',
+    willChange:'transform, opacity, filter'
   } as React.CSSProperties;
 }
 
