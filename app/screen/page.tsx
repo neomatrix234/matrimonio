@@ -807,6 +807,18 @@ export default function ScreenPage(){
     }
   }
 
+
+  async function toggleFullscreen(){
+    try{
+      if(document.fullscreenElement){
+        await document.exitFullscreen();
+      }else{
+        setEscapedFullscreen(false);
+        await document.documentElement.requestFullscreen();
+      }
+    }catch{}
+  }
+
   function onMosaicWheel(e:React.WheelEvent<HTMLDivElement>){
     e.preventDefault();
     const rect=e.currentTarget.getBoundingClientRect();
