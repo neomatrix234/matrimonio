@@ -642,6 +642,7 @@ export default function ScreenPage(){
   const [escapedFullscreen,setEscapedFullscreen]=useState(false);
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
   const [mosaicTileDensity,setMosaicTileDensity]=useState<MosaicTileDensity>('100');
+  const [showFsStop,setShowFsStop]=useState(false);
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -651,6 +652,7 @@ export default function ScreenPage(){
   const targetAspectRef=useRef(1.5);
   const currentTargetUrlRef=useRef('');
   const currentRun=useRef(0);
+  const fsUiTimer=useRef<any>(null);
 
   useEffect(()=>{
     if(typeof window==='undefined') return;
@@ -959,12 +961,13 @@ export default function ScreenPage(){
       const nowFullscreen=Boolean(document.fullscreenElement);
       setIsFullscreen(nowFullscreen);
       if(wasFullscreen && !nowFullscreen){
-        // Se si esce dal pieno schermo durante la creazione, torna subito in admin.
+        // Uscendo dal pieno schermo la creazione continua normalmente.
         setEscapedFullscreen(true);
-        window.location.href='/admin';
-        return;
+        setShowFsStop(false);
       }
-      if(nowFullscreen) setEscapedFullscreen(false);
+      if(nowFullscreen){
+        setEscapedFullscreen(false);
+      }
       wasFullscreen=nowFullscreen;
     };
     const onKeyDown=(e:KeyboardEvent)=>{
@@ -973,17 +976,25 @@ export default function ScreenPage(){
         setSelectedTile(null);
         return;
       }
-      if(document.fullscreenElement) return; // il browser esce dal pieno schermo, poi fullscreenchange riporta in admin
-      window.location.href='/admin';
+      // Il browser gestisce l'uscita dal pieno schermo; la creazione non si interrompe.
+    };
+    const onMouseMove=()=>{
+      if(!document.fullscreenElement) return;
+      setShowFsStop(true);
+      if(fsUiTimer.current) clearTimeout(fsUiTimer.current);
+      fsUiTimer.current=setTimeout(()=>setShowFsStop(false), 1800);
     };
     document.addEventListener('fullscreenchange',fs);
     window.addEventListener('keydown',onKeyDown);
+    window.addEventListener('mousemove',onMouseMove);
     return ()=>{
       clearInterval(id);
+      if(fsUiTimer.current) clearTimeout(fsUiTimer.current);
       document.removeEventListener('fullscreenchange',fs);
       window.removeEventListener('keydown',onKeyDown);
+      window.removeEventListener('mousemove',onMouseMove);
     };
-  },[replayStarted,final,paused,escapedFullscreen,selectedTile,mosaicTileDensity,mosaicStyle]);
+  },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle]);
 
   const configuredTotal=status?.totalTiles || 600;
   const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
@@ -1042,13 +1053,13 @@ export default function ScreenPage(){
         </div>
       </div>
 
-      {final && <div style={{
+      {final && !isFullscreen && <div style={{
         position:'absolute',
-        bottom: isFullscreen ? 42 : 86,
+        bottom: 86,
         left:0,
         right:0,
         textAlign:'center',
-        fontSize: isFullscreen ? 'clamp(28px,4vw,56px)' : 28,
+        fontSize: 28,
         fontWeight:800,
         textShadow:'0 3px 18px #000',
         zIndex:6,
@@ -1063,6 +1074,12 @@ export default function ScreenPage(){
         <button className="danger" onClick={stopMosaic}>Interrompi</button>
         <button onClick={restartMosaic}>Riparti</button>
       </div>}
+
+      {isFullscreen && showFsStop && (
+        <button onClick={stopMosaic} style={{position:'fixed', right:18, bottom:18, zIndex:20, border:'none', borderRadius:999, padding:'12px 18px', background:'rgba(125,15,34,.92)', color:'#fff', fontWeight:800, boxShadow:'0 10px 30px rgba(0,0,0,.35)', cursor:'pointer'}}>
+          Interrompi
+        </button>
+      )}
 
       {selectedTile && <div className="tileModal" onClick={()=>setSelectedTile(null)}>
         <div style={{maxWidth:'min(94vw, 980px)', maxHeight:'94vh', display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>e.stopPropagation()}>

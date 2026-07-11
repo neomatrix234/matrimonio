@@ -829,7 +829,7 @@ export default function AdminPage(){
     finally{setBusy(false);}
   }
 
-  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); try{await adminAction('setTotal',{totalTiles:n});showAdminMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
+  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); setData((prev:any)=>prev ? {...prev, totalTiles:n, missing:Math.max(0, n - Number(prev.receivedCount||0))} : prev); try{await adminAction('setTotal',{totalTiles:n});showAdminMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
   async function setOpacity(v:number){
     setData((prev:any)=>prev ? {...prev, panelOpacity:v} : prev);
     try{
