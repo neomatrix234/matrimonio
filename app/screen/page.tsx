@@ -169,6 +169,27 @@ function effectiveTileTotal(total:number, density:MosaicTileDensity='100'){
   return Math.max(24, Math.round(total * factor));
 }
 
+function tileScatterStyle(index:number, cols:number, rows:number, active:boolean){
+  if(!active) return {} as React.CSSProperties;
+  const x=index%cols;
+  const y=Math.floor(index/cols);
+  const nx=(x/Math.max(1, cols-1))*2-1;
+  const ny=(y/Math.max(1, rows-1))*2-1;
+  const seed=((index*9301+49297)%233280)/233280;
+  const rx=(seed*2-1);
+  const ry=((((index+31)*6113)%1000)/500)-1;
+  const dx=Math.round(nx*90 + rx*110 + 70);
+  const dy=Math.round(ny*65 + ry*90);
+  const rot=Math.round((rx+ry)*18);
+  const delay=((x/Math.max(1,cols))*0.42 + (y/Math.max(1,rows))*0.12);
+  return {
+    transform:`translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(.88)`,
+    opacity:0.04,
+    transition:`transform .95s cubic-bezier(.18,.84,.22,1) ${delay}s, opacity .85s ease ${delay}s, filter .85s ease ${delay}s`,
+    filter:'blur(.4px)'
+  } as React.CSSProperties;
+}
+
 async function getImageAspect(url:string): Promise<number>{
   const img = await loadImg(url);
   const w = img.naturalWidth || img.width || 1;
@@ -523,65 +544,111 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const canvas=document.createElement('canvas');
   canvas.width=size;
   canvas.height=size;
-  const ctx=canvas.getContext('2d');
+  const ctx=canvas.getContext('2d', { willReadFrequently:true });
   if(!ctx) return url;
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
   const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
-
-  // 1) Base: la foto ospite originale, nitida e ben riconoscibile.
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
-  // 2) Estrai la vera porzione dell'immagine target corrispondente a questa cella:
-  //    ogni tessera prende esattamente il pezzo di volto/immagine che le spetta,
-  //    così ricomponendo tutte le tessere si ricompone il volto intero.
-  let targetCanvas:HTMLCanvasElement | null = null;
-  try{
-    if(targetUrl) targetCanvas = await extractExactTargetPatch(targetUrl, col, row, cols, rows, size);
-  }catch(e){ targetCanvas = null; }
-
-  // Fallback se il target non è disponibile: tinta piatta col colore medio della cella.
-  if(!targetCanvas){
-    targetCanvas=document.createElement('canvas');
-    targetCanvas.width=size;
-    targetCanvas.height=size;
-    const tctx=targetCanvas.getContext('2d');
-    if(tctx){
+  const targetCanvas=document.createElement('canvas');
+  targetCanvas.width=size;
+  targetCanvas.height=size;
+  const tctx=targetCanvas.getContext('2d', { willReadFrequently:true });
+  if(tctx){
+    if(targetUrl){
+      const patch = await extractExactTargetPatch(targetUrl, col, row, cols, rows, size);
+      tctx.drawImage(patch,0,0,size,size);
+    }else{
       tctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
       tctx.fillRect(0,0,size,size);
     }
   }
 
-  // 3) Doppia esposizione fotografica: è la tecnica reale usata nei mosaici in cui
-  //    un volto grande e nitido emerge sopra un muro di foto piccole (come nel
-  //    riferimento). Si ottiene sovrapponendo l'immagine target alla tessera con
-  //    tre passaggi di compositing nativo del canvas:
-  //    - "multiply": scurisce dove il target è scuro (capelli, sopracciglia,
-  //      pupille, ombre), facendo emergere i tratti scuri del volto;
-  //    - "screen": schiarisce dove il target è chiaro (pelle, luci, riflessi),
-  //      così anche le zone luminose del volto restano leggibili;
-  //    - "overlay": aumenta il contrasto locale seguendo la forma del target e
-  //      ne trasferisce leggermente il colore, "incollando" i due livelli.
-  //    Dove il target è neutro (es. sfondo uniforme) l'effetto è minimo e la
-  //    foto della tessera resta ben visibile sotto, esattamente come nel muro
-  //    di riferimento.
-  const weights = style === 'classicTiles'
-    ? { multiply:0.30, screen:0.16, overlay:0.22 }
-    : { multiply:0.52, screen:0.30, overlay:0.42 };
+  const source=ctx.getImageData(0,0,size,size);
+  const targetImgData=tctx ? tctx.getImageData(0,0,size,size) : source;
+  const d=source.data, td=targetImgData.data;
+  let minLum=1,maxLum=0;
+  for(let i=0;i<d.length;i+=4){
+    const lum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    if(lum<minLum) minLum=lum;
+    if(lum>maxLum) maxLum=lum;
+  }
+  const range=Math.max(0.06,maxLum-minLum);
 
-  ctx.globalCompositeOperation='multiply';
-  ctx.globalAlpha=weights.multiply;
+  const mode = style === 'classicTiles' ? {
+    wTargetBase:0.34, wTargetEdge:0.06, wSoft:0.13, wPhotoLum:0.20, keepOriginal:0.46,
+    textureSoft:0.07, textureMultiply:0.03, overlaySoft:0.05, overlayColor:0.07, overlaySource:0.025, wash:0.08
+  } : {
+    wTargetBase:0.56, wTargetEdge:0.08, wSoft:0.21, wPhotoLum:0.14, keepOriginal:0.24,
+    textureSoft:0.10, textureMultiply:0.04, overlaySoft:0.16, overlayColor:0.22, overlaySource:0.11, wash:0.16
+  };
+
+  if(mode.wash > 0){
+    for(let i=0;i<d.length;i+=4){
+      d[i]=clamp(Math.round(d[i] + (255-d[i])*mode.wash));
+      d[i+1]=clamp(Math.round(d[i+1] + (255-d[i+1])*mode.wash));
+      d[i+2]=clamp(Math.round(d[i+2] + (255-d[i+2])*mode.wash));
+    }
+  }
+
+  for(let i=0;i<d.length;i+=4){
+    const srcLum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    const A=clamp01((srcLum-minLum)/range);
+    const sr=d[i], sg=d[i+1], sb=d[i+2];
+    const tr=td[i],tg=td[i+1],tb=td[i+2];
+    const targetLum=(0.2126*tr+0.7152*tg+0.0722*tb)/255;
+    const midMask=clamp01(4*targetLum*(1-targetLum));
+    const blend=(tc:number, sc:number)=>{
+      const B=tc/255;
+      const soft=(1-2*B)*(A*A)+2*B*A;
+      const wTarget=mode.wTargetBase+(1-midMask)*mode.wTargetEdge;
+      const wSoft=mode.wSoft+midMask*0.03;
+      const wPhotoLum=mode.wPhotoLum+midMask*0.04;
+      const fused=clamp01(B*wTarget+soft*wSoft+A*wPhotoLum);
+      return clamp(Math.round((fused*(1-mode.keepOriginal)+(sc/255)*mode.keepOriginal)*255));
+    };
+    d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
+  }
+  ctx.putImageData(source,0,0);
+
+  const textureCanvas=document.createElement('canvas');
+  textureCanvas.width=size;
+  textureCanvas.height=size;
+  const tx=textureCanvas.getContext('2d',{willReadFrequently:true});
+  if(tx){
+    tx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
+    const ximg=tx.getImageData(0,0,size,size);
+    const xd=ximg.data;
+    for(let i=0;i<xd.length;i+=4){
+      const lum=(0.2126*xd[i]+0.7152*xd[i+1]+0.0722*xd[i+2])/255;
+      const gray=clamp(Math.round(lum*255));
+      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=style === 'classicTiles' ? 38 : 44;
+    }
+    tx.putImageData(ximg,0,0);
+    ctx.globalCompositeOperation='soft-light';
+    ctx.globalAlpha=mode.textureSoft;
+    ctx.drawImage(textureCanvas,0,0,size,size);
+    ctx.globalCompositeOperation='multiply';
+    ctx.globalAlpha=mode.textureMultiply;
+    ctx.drawImage(textureCanvas,0,0,size,size);
+  }
+
+  ctx.globalCompositeOperation='soft-light';
+  ctx.globalAlpha=mode.overlaySoft;
   ctx.drawImage(targetCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='screen';
-  ctx.globalAlpha=weights.screen;
+  ctx.globalCompositeOperation='color';
+  ctx.globalAlpha=mode.overlayColor;
   ctx.drawImage(targetCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='overlay';
-  ctx.globalAlpha=weights.overlay;
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=mode.overlaySource;
   ctx.drawImage(targetCanvas,0,0,size,size);
-
+  if(style === 'portraitOverlay'){
+    ctx.globalCompositeOperation='overlay';
+    ctx.globalAlpha=0.11;
+    ctx.drawImage(targetCanvas,0,0,size,size);
+  }
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=1;
 
@@ -610,6 +677,7 @@ export default function ScreenPage(){
   const [viewZoom,setViewZoom]=useState(1);
   const [viewPan,setViewPan]=useState({x:0,y:0});
   const [isPanning,setIsPanning]=useState(false);
+  const [decomposeTiles,setDecomposeTiles]=useState(false);
 
   const processing=useRef(false);
   const usedIndexes=useRef<Set<number>>(new Set());
@@ -935,6 +1003,7 @@ export default function ScreenPage(){
           setReplayStarted(false);
         } else {
           setReplayStarted(true);
+    setDecomposeTiles(false);
           setTimeout(()=>startReplay(total),3000);
         }
       }
@@ -946,6 +1015,7 @@ export default function ScreenPage(){
     setPaused(true);
     setReplayStarted(false);
     setFinal(false);
+    setDecomposeTiles(false);
     setCompleteMsg(false);
     processing.current=false;
   }
@@ -955,6 +1025,7 @@ export default function ScreenPage(){
     setPaused(false);
     setReplayStarted(false);
     setFinal(false);
+    setDecomposeTiles(false);
     setCompleteMsg(false);
     usedIndexes.current=new Set();
     assignedPhotoByIndex.current=new Map();
@@ -1061,6 +1132,16 @@ export default function ScreenPage(){
   },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle,preferredTotal]);
 
 
+
+  useEffect(()=>{
+    if(!final){
+      setDecomposeTiles(false);
+      return;
+    }
+    const t=setTimeout(()=>setDecomposeTiles(true), isFullscreen ? 1400 : 1800);
+    return ()=>clearTimeout(t);
+  }, [final, isFullscreen]);
+
   useEffect(()=>{
     if(!restoredState && !tiles.length && !currentTargetUrlRef.current) return;
     const configured = preferredTotal || status?.totalTiles || 200;
@@ -1130,19 +1211,14 @@ export default function ScreenPage(){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:isFullscreen?'1px solid rgba(0,0,0,.20)':'1px solid rgba(255,255,255,.06)',overflow:'hidden', boxSizing:'border-box'}}>
-                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto">
-                  <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
+              return <div key={i} style={{background:'#222',border:isFullscreen?'1px solid rgba(0,0,0,.20)':'1px solid rgba(255,255,255,.06)',overflow: final && decomposeTiles ? 'visible' : 'hidden', boxSizing:'border-box', position:'relative', zIndex: final && decomposeTiles ? 3 : 1}}>
+                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto" style={tileScatterStyle(i, cols, rows, final && decomposeTiles)}>
+                  <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease', opacity: final && decomposeTiles ? 0.30 : 1, transition:'opacity .9s ease'}}/>
                 </button>}
               </div>
             })}
           </div>
-          {final && targetUrl && mosaicStyle==='portraitOverlay' && <>
-            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.22, mixBlendMode:'soft-light', pointerEvents:'none', userSelect:'none'}} />
-            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.16, mixBlendMode:'color', pointerEvents:'none', userSelect:'none'}} />
-            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.10, pointerEvents:'none', userSelect:'none'}} />
-          </>}
-          {final && targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.20, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.62 : 0.38, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
