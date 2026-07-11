@@ -488,139 +488,66 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const canvas=document.createElement('canvas');
   canvas.width=size;
   canvas.height=size;
-  const ctx=canvas.getContext('2d', { willReadFrequently:true });
+  const ctx=canvas.getContext('2d');
   if(!ctx) return url;
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
   const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
 
-  // Base reale: la foto tessera originale resta visibile.
+  // 1) Base: la foto ospite originale, nitida e ben riconoscibile.
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
-  // Estrai la vera porzione dell'immagine target per questa cella.
+  // 2) Estrai la vera porzione dell'immagine target corrispondente a questa cella:
+  //    ogni tessera prende esattamente il pezzo di volto/immagine che le spetta,
+  //    così ricomponendo tutte le tessere si ricompone il volto intero.
   let targetCanvas:HTMLCanvasElement | null = null;
   try{
     if(targetUrl) targetCanvas = await extractExactTargetPatch(targetUrl, col, row, cols, rows, size);
   }catch(e){ targetCanvas = null; }
 
-  // Fallback se non disponibile: ricostruisci una patch liscia dalla patch calcolata.
+  // Fallback se il target non è disponibile: tinta piatta col colore medio della cella.
   if(!targetCanvas){
     targetCanvas=document.createElement('canvas');
     targetCanvas.width=size;
     targetCanvas.height=size;
-    const ps=PROFESSIONAL_MOSAIC.patchSize;
-    const psmall=document.createElement('canvas');
-    psmall.width=ps; psmall.height=ps;
-    const pctx=psmall.getContext('2d');
     const tctx=targetCanvas.getContext('2d');
-    if(pctx && tctx){
-      const pimg=pctx.createImageData(ps,ps);
-      for(let i=0;i<ps*ps;i++){
-        const off=i*4;
-        const rgb=(targetPatch && targetPatch[i]) ? targetPatch[i] : target;
-        pimg.data[off]=rgb[0];
-        pimg.data[off+1]=rgb[1];
-        pimg.data[off+2]=rgb[2];
-        pimg.data[off+3]=255;
-      }
-      pctx.putImageData(pimg,0,0);
-      tctx.imageSmoothingEnabled=true;
-      tctx.drawImage(psmall,0,0,size,size);
+    if(tctx){
+      tctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+      tctx.fillRect(0,0,size,size);
     }
   }
 
-  const targetCtx=targetCanvas.getContext('2d', { willReadFrequently:true });
-  if(!targetCtx) return canvas.toDataURL('image/jpeg', .92);
-  const targetImage=targetCtx.getImageData(0,0,size,size);
-  const tdata=targetImage.data;
+  // 3) Doppia esposizione fotografica: è la tecnica reale usata nei mosaici in cui
+  //    un volto grande e nitido emerge sopra un muro di foto piccole (come nel
+  //    riferimento). Si ottiene sovrapponendo l'immagine target alla tessera con
+  //    tre passaggi di compositing nativo del canvas:
+  //    - "multiply": scurisce dove il target è scuro (capelli, sopracciglia,
+  //      pupille, ombre), facendo emergere i tratti scuri del volto;
+  //    - "screen": schiarisce dove il target è chiaro (pelle, luci, riflessi),
+  //      così anche le zone luminose del volto restano leggibili;
+  //    - "overlay": aumenta il contrasto locale seguendo la forma del target e
+  //      ne trasferisce leggermente il colore, "incollando" i due livelli.
+  //    Dove il target è neutro (es. sfondo uniforme) l'effetto è minimo e la
+  //    foto della tessera resta ben visibile sotto, esattamente come nel muro
+  //    di riferimento.
+  const weights = style === 'classicTiles'
+    ? { multiply:0.30, screen:0.16, overlay:0.22 }
+    : { multiply:0.52, screen:0.30, overlay:0.42 };
 
-  const sourceImage=ctx.getImageData(0,0,size,size);
-  const d=sourceImage.data;
-
-  let minLum=1, maxLum=0;
-  for(let i=0;i<d.length;i+=4){
-    const lum=luminance([d[i],d[i+1],d[i+2]]);
-    if(lum<minLum) minLum=lum;
-    if(lum>maxLum) maxLum=lum;
-  }
-  const range=Math.max(0.06, maxLum-minLum);
-  const mode = style === 'classicTiles' ? {
-    wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
-    textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
-  } : {
-    wTargetBase:0.42, wTargetEdge:0.06, wSoft:0.16, wPhotoLum:0.17, keepOriginal:0.36,
-    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.10, overlayColor:0.14, overlaySource:0.07
-  };
-
-  for(let i=0;i<d.length;i+=4){
-    const sr=d[i], sg=d[i+1], sb=d[i+2];
-    const tr=tdata[i], tg=tdata[i+1], tb=tdata[i+2];
-    const srcLum=luminance([sr,sg,sb]);
-    const srcNorm=clamp01((srcLum-minLum)/range);
-    const gray=srcNorm;
-    const targetLum=luminance([tr,tg,tb]);
-    const midMask=clamp01(4*targetLum*(1-targetLum));
-
-    const blendChannel=(targetChannel:number, sourceChannel:number)=>{
-      const B=targetChannel/255;
-      const A=gray;
-      const soft=(1-2*B)*(A*A)+2*B*A;
-      // Più visibilità alla foto originale: il target colora e guida la forma,
-      // ma la tessera originale resta molto più leggibile sotto.
-      const wTarget=mode.wTargetBase + (1-midMask)*mode.wTargetEdge;
-      const wSoft=mode.wSoft + midMask*0.03;
-      const wPhotoLum=mode.wPhotoLum + midMask*0.06;
-      const fused=clamp01(B*wTarget + soft*wSoft + A*wPhotoLum);
-      const keepOriginal=mode.keepOriginal;
-      return clamp(Math.round((fused*(1-keepOriginal) + (sourceChannel/255)*keepOriginal)*255));
-    };
-
-    d[i]=blendChannel(tr,sr);
-    d[i+1]=blendChannel(tg,sg);
-    d[i+2]=blendChannel(tb,sb);
-  }
-  ctx.putImageData(sourceImage,0,0);
-
-  // Texture lieve della foto originale, in scala di grigio.
-  const textureCanvas=document.createElement('canvas');
-  textureCanvas.width=size;
-  textureCanvas.height=size;
-  const textureCtx=textureCanvas.getContext('2d', { willReadFrequently:true });
-  if(textureCtx){
-    textureCtx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
-    const ximg=textureCtx.getImageData(0,0,size,size);
-    const xd=ximg.data;
-    for(let i=0;i<xd.length;i+=4){
-      const lum=luminance([xd[i],xd[i+1],xd[i+2]]);
-      const gray=clamp(Math.round(lum*255));
-      xd[i]=gray; xd[i+1]=gray; xd[i+2]=gray; xd[i+3]=style === 'classicTiles' ? 42 : 48;
-    }
-    textureCtx.putImageData(ximg,0,0);
-    ctx.globalCompositeOperation='soft-light';
-    ctx.globalAlpha=mode.textureSoft;
-    ctx.drawImage(textureCanvas,0,0,size,size);
-    ctx.globalCompositeOperation='multiply';
-    ctx.globalAlpha=mode.textureMultiply;
-    ctx.drawImage(textureCanvas,0,0,size,size);
-  }
-
-  // Overlay della vera immagine target come trasparenza sopra la tessera: 
-  // deve vedersi la forma originale della cella, ma restando leggibile la foto sotto.
-  ctx.globalCompositeOperation='soft-light';
-  ctx.globalAlpha=mode.overlaySoft;
+  ctx.globalCompositeOperation='multiply';
+  ctx.globalAlpha=weights.multiply;
   ctx.drawImage(targetCanvas,0,0,size,size);
-  ctx.globalCompositeOperation='color';
-  ctx.globalAlpha=mode.overlayColor;
+
+  ctx.globalCompositeOperation='screen';
+  ctx.globalAlpha=weights.screen;
   ctx.drawImage(targetCanvas,0,0,size,size);
+
+  ctx.globalCompositeOperation='overlay';
+  ctx.globalAlpha=weights.overlay;
+  ctx.drawImage(targetCanvas,0,0,size,size);
+
   ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=mode.overlaySource;
-  ctx.drawImage(targetCanvas,0,0,size,size);
-  if(style === 'portraitOverlay'){
-    ctx.globalCompositeOperation='overlay';
-    ctx.globalAlpha=0.08;
-    ctx.drawImage(targetCanvas,0,0,size,size);
-  }
   ctx.globalAlpha=1;
 
   return canvas.toDataURL('image/jpeg', .92);
