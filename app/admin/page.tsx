@@ -187,7 +187,7 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.44 : 0.20;
+  const opacity = style === 'portraitOverlay' ? 0.48 : 0.22;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = opacity;
@@ -527,8 +527,8 @@ async function createPreviewMosaicTile(
     wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
     textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
   } : {
-    wTargetBase:0.42, wTargetEdge:0.06, wSoft:0.16, wPhotoLum:0.17, keepOriginal:0.36,
-    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.10, overlayColor:0.14, overlaySource:0.07
+    wTargetBase:0.46, wTargetEdge:0.06, wSoft:0.18, wPhotoLum:0.16, keepOriginal:0.32,
+    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.12, overlayColor:0.16, overlaySource:0.08
   };
 
   for(let i=0;i<d.length;i+=4){
@@ -798,6 +798,7 @@ export default function AdminPage(){
       setLogged(true);
       const st = d.status || d;
       setData(st);
+      if(typeof window!=='undefined' && st?.totalTiles) window.localStorage.setItem('fm_total_tiles', String(st.totalTiles));
       applyStatusToAdmin(st);
       showAdminMsg('Accesso effettuato.');
     }catch(e:any){setErr(e?.message||'Errore accesso');}
@@ -812,6 +813,7 @@ export default function AdminPage(){
       const d=await r.json();
       if(!r.ok||!d.ok) throw new Error(d.error||'Errore');
       setData(d);
+      if(typeof window!=='undefined' && d?.totalTiles) window.localStorage.setItem('fm_total_tiles', String(d.totalTiles));
       applyStatusToAdmin(d);
     }catch(e:any){setErr(e?.message||'Errore caricamento');}
   }
@@ -829,7 +831,7 @@ export default function AdminPage(){
     finally{setBusy(false);}
   }
 
-  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); setData((prev:any)=>prev ? {...prev, totalTiles:n, missing:Math.max(0, n - Number(prev.receivedCount||0))} : prev); try{await adminAction('setTotal',{totalTiles:n});showAdminMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
+  async function setTotal(n:number){ setBusyText('Aggiorno numero foto...'); if(typeof window!=='undefined') window.localStorage.setItem('fm_total_tiles', String(n)); setData((prev:any)=>prev ? {...prev, totalTiles:n, missing:Math.max(0, n - Number(prev.receivedCount||0))} : prev); try{const d=await adminAction('setTotal',{totalTiles:n}); if(d?.totalTiles && typeof window!=='undefined') window.localStorage.setItem('fm_total_tiles', String(d.totalTiles)); showAdminMsg(`Obiettivo impostato a ${n} foto/tessere.`);}catch{} }
   async function setOpacity(v:number){
     setData((prev:any)=>prev ? {...prev, panelOpacity:v} : prev);
     try{

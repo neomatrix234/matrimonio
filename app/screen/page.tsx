@@ -47,6 +47,41 @@ type Tile = {
   repeated:number;
 };
 
+
+type PersistedScreenState = {
+  version:number;
+  configuredTotal:number;
+  density:MosaicTileDensity;
+  style:MosaicRenderStyle;
+  targetUrl:string;
+  targetAspect:number;
+  final:boolean;
+  paused:boolean;
+  replayStarted:boolean;
+  tiles:Tile[];
+};
+
+const SCREEN_STATE_KEY='fm_screen_state_v1';
+
+function saveScreenState_(state:PersistedScreenState){
+  if(typeof window==='undefined') return;
+  try{ sessionStorage.setItem(SCREEN_STATE_KEY, JSON.stringify(state)); }catch{}
+}
+function loadScreenState_():PersistedScreenState|null{
+  if(typeof window==='undefined') return null;
+  try{
+    const raw=sessionStorage.getItem(SCREEN_STATE_KEY);
+    if(!raw) return null;
+    const parsed=JSON.parse(raw);
+    if(!parsed || !Array.isArray(parsed.tiles)) return null;
+    return parsed;
+  }catch{return null;}
+}
+function clearScreenState_(){
+  if(typeof window==='undefined') return;
+  try{ sessionStorage.removeItem(SCREEN_STATE_KEY); }catch{}
+}
+
 const PROFESSIONAL_MOSAIC = {
   tintOpacity: 0.12,
   preserveOriginal: 0.06,
@@ -570,6 +605,8 @@ export default function ScreenPage(){
   const [mosaicStyle,setMosaicStyle]=useState<MosaicRenderStyle>('portraitOverlay');
   const [mosaicTileDensity,setMosaicTileDensity]=useState<MosaicTileDensity>('100');
   const [showFsStop,setShowFsStop]=useState(false);
+  const [preferredTotal,setPreferredTotal]=useState<number|null>(null);
+  const [restoredState,setRestoredState]=useState(false);
   const [viewZoom,setViewZoom]=useState(1);
   const [viewPan,setViewPan]=useState({x:0,y:0});
   const [isPanning,setIsPanning]=useState(false);
@@ -593,11 +630,30 @@ export default function ScreenPage(){
     if(saved === 'portraitOverlay' || saved === 'classicTiles') setMosaicStyle(saved);
     const savedDensity = window.localStorage.getItem('fm_mosaic_tile_density');
     if(savedDensity === '100' || savedDensity === '75' || savedDensity === '60') setMosaicTileDensity(savedDensity);
+    const savedTotal = Number(window.localStorage.getItem('fm_total_tiles') || '0');
+    if(savedTotal > 0) setPreferredTotal(savedTotal);
+    const restored = loadScreenState_();
+    if(restored){
+      setTiles(restored.tiles || []);
+      usedIndexes.current = new Set((restored.tiles || []).map((t:any)=>t.index));
+      assignedPhotoByIndex.current = new Map((restored.tiles || []).map((t:any)=>[t.index, t.url]));
+      setTargetAspect(restored.targetAspect || 1.5);
+      setFinal(Boolean(restored.final));
+      setPaused(Boolean(restored.paused));
+      setReplayStarted(Boolean(restored.replayStarted));
+      currentTargetUrlRef.current = restored.targetUrl || '';
+      if(restored.configuredTotal) setPreferredTotal(restored.configuredTotal);
+      if(restored.density === '100' || restored.density === '75' || restored.density === '60') setMosaicTileDensity(restored.density);
+      if(restored.style === 'portraitOverlay' || restored.style === 'classicTiles') setMosaicStyle(restored.style);
+      setRestoredState(true);
+    }
     const onStorage = () => {
       const next = window.localStorage.getItem('fm_mosaic_style');
       if(next === 'portraitOverlay' || next === 'classicTiles') setMosaicStyle(next);
       const nextDensity = window.localStorage.getItem('fm_mosaic_tile_density');
       if(nextDensity === '100' || nextDensity === '75' || nextDensity === '60') setMosaicTileDensity(nextDensity);
+      const nextTotal = Number(window.localStorage.getItem('fm_total_tiles') || '0');
+      if(nextTotal > 0) setPreferredTotal(nextTotal);
     };
     window.addEventListener('storage', onStorage);
     return ()=>window.removeEventListener('storage', onStorage);
@@ -834,8 +890,9 @@ export default function ScreenPage(){
       if(!s.ok) return;
       setStatus(s);
 
-      const configuredTotal = s.totalTiles || 600;
+      const configuredTotal = preferredTotal || s.totalTiles || 200;
       const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
+      if(typeof window!=='undefined') window.localStorage.setItem('fm_total_tiles', String(configuredTotal));
       if(activeTotalRef.current !== total){
         currentRun.current += 1;
         activeTotalRef.current = total;
@@ -871,10 +928,15 @@ export default function ScreenPage(){
       }
 
       if((s.photos || []).length > 0 && targetCellsRef.current.length && usedIndexes.current.size >= total && !final && !replayStarted){
-        setReplayStarted(true);
         setCompleteMsg(true);
         setTimeout(()=>setCompleteMsg(false),2500);
-        setTimeout(()=>startReplay(total),3000);
+        if(document.fullscreenElement){
+          setFinal(true);
+          setReplayStarted(false);
+        } else {
+          setReplayStarted(true);
+          setTimeout(()=>startReplay(total),3000);
+        }
       }
     }catch(e){}
   }
@@ -961,9 +1023,10 @@ export default function ScreenPage(){
       const nowFullscreen=Boolean(document.fullscreenElement);
       setIsFullscreen(nowFullscreen);
       if(wasFullscreen && !nowFullscreen){
-        // Uscendo dal pieno schermo la creazione continua normalmente.
+        // Uscendo dal pieno schermo torno in admin, ma salvo lo stato per riprendere dopo.
         setEscapedFullscreen(true);
         setShowFsStop(false);
+        setTimeout(()=>{ if(typeof window!=='undefined' && window.location.pathname === '/screen') window.location.href='/admin'; }, 30);
       }
       if(nowFullscreen){
         setEscapedFullscreen(false);
@@ -995,9 +1058,27 @@ export default function ScreenPage(){
       window.removeEventListener('keydown',onKeyDown);
       window.removeEventListener('mousemove',onMouseMove);
     };
-  },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle]);
+  },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle,preferredTotal]);
 
-  const configuredTotal=status?.totalTiles || 600;
+
+  useEffect(()=>{
+    if(!restoredState && !tiles.length && !currentTargetUrlRef.current) return;
+    const configured = preferredTotal || status?.totalTiles || 200;
+    saveScreenState_({
+      version:1,
+      configuredTotal:configured,
+      density:mosaicTileDensity,
+      style:mosaicStyle,
+      targetUrl:currentTargetUrlRef.current || targetImageUrl(status),
+      targetAspect,
+      final,
+      paused,
+      replayStarted,
+      tiles
+    });
+  }, [tiles, targetAspect, final, paused, replayStarted, mosaicTileDensity, mosaicStyle, preferredTotal, status, restoredState]);
+
+  const configuredTotal=(preferredTotal || status?.totalTiles || 200);
   const total=effectiveTileTotal(configuredTotal, mosaicTileDensity);
   const {cols,rows}=gridForTotal(total, targetAspect);
   const cells=Array.from({length:total});
@@ -1065,17 +1146,18 @@ export default function ScreenPage(){
         </div>
       </div>
 
-      {final && !isFullscreen && <div style={{
+      {final && <div style={{
         position:'absolute',
-        bottom: 86,
+        bottom: isFullscreen ? 42 : 86,
         left:0,
         right:0,
         textAlign:'center',
-        fontSize: 28,
+        fontSize: isFullscreen ? 'clamp(28px,4vw,56px)' : 28,
         fontWeight:800,
         textShadow:'0 3px 18px #000',
         zIndex:6,
-        padding:'0 20px'
+        padding:'0 20px',
+        pointerEvents:'none'
       }}>
         Grazie per aver contribuito a questo ricordo.
       </div>}
@@ -1092,7 +1174,10 @@ export default function ScreenPage(){
           <button onClick={()=>setViewZoom(z=>Math.max(0.45,z/1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>-</button>
           <button onClick={resetMosaicView} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>{Math.round(viewZoom*100)}%</button>
           <button onClick={()=>setViewZoom(z=>Math.min(8,z*1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>+</button>
-          <button onClick={stopMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(125,15,34,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Interrompi</button>
+          {!final && !paused && <button onClick={stopMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(125,15,34,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Interrompi</button>}
+          {paused && <button onClick={restartMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(16,120,80,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Riparti</button>}
+          {final && <button onClick={()=>startReplay(total)} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(30,90,180,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Replay</button>}
+          {final && <button onClick={restartMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(16,120,80,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Riparti</button>}
         </div>
       )}
 
