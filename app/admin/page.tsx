@@ -187,7 +187,7 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.28 : 0.16;
+  const opacity = style === 'portraitOverlay' ? 0.36 : 0.20;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = opacity;
@@ -530,11 +530,11 @@ async function createPreviewMosaicTile(
   const range=Math.max(0.06,maxLum-minLum);
 
   const mode = style === 'classicTiles' ? {
-    wTargetBase:0.34, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.46,
+    wTargetBase:0.36, wTargetEdge:0.05, wSoft:0.12, wPhotoLum:0.20, keepOriginal:0.42,
     textureSoft:0.05, textureMultiply:0.02, overlaySoft:0.05, overlayColor:0.06, overlaySource:0.02
   } : {
-    wTargetBase:0.58, wTargetEdge:0.08, wSoft:0.20, wPhotoLum:0.12, keepOriginal:0.20,
-    textureSoft:0.04, textureMultiply:0.015, overlaySoft:0.10, overlayColor:0.18, overlaySource:0.05
+    wTargetBase:0.64, wTargetEdge:0.09, wSoft:0.22, wPhotoLum:0.11, keepOriginal:0.16,
+    textureSoft:0.04, textureMultiply:0.015, overlaySoft:0.11, overlayColor:0.20, overlaySource:0.06
   };
 
   for(let i=0;i<d.length;i+=4){

@@ -1582,3 +1582,29 @@ pre{
   border:1px solid rgba(0,0,0,.08);
   background:#f7f3ee;
 }
+
+
+.tileCodeBadge{
+  position:absolute;
+  top:2px;
+  left:2px;
+  z-index:3;
+  padding:1px 4px;
+  border-radius:6px;
+  background:rgba(255,255,255,.34);
+  color:rgba(0,0,0,.62);
+  font-size:9px;
+  line-height:1.1;
+  font-weight:700;
+  letter-spacing:.02em;
+  pointer-events:none;
+  backdrop-filter:blur(1px);
+}
+@keyframes tileAssemble{
+  0%{ transform:translate(var(--from-x), var(--from-y)) rotate(var(--rot-a)) scale(.68); opacity:0; }
+  16%{ opacity:1; }
+  38%{ transform:translate(calc(var(--mid-x) * 1.15), calc(var(--mid-y) * 1.15)) rotate(var(--rot-b)) scale(1.06); }
+  64%{ transform:translate(calc(var(--mid-x) * -.28), calc(var(--mid-y) * -.28)) rotate(calc(var(--rot-b) * -.35)) scale(.97); }
+  82%{ transform:translate(8px, -6px) rotate(3deg) scale(1.01); }
+  100%{ transform:translate(0,0) rotate(0deg) scale(1); opacity:1; }
+}

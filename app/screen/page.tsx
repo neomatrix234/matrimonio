@@ -169,6 +169,44 @@ function effectiveTileTotal(total:number, density:MosaicTileDensity='100'){
   return Math.max(24, Math.round(total * factor));
 }
 
+function rowLabel(index:number){
+  let n=index;
+  let out='';
+  do{
+    out=String.fromCharCode(65+(n%26))+out;
+    n=Math.floor(n/26)-1;
+  }while(n>=0);
+  return out;
+}
+function cellCode(index:number, cols:number){
+  const row=Math.floor(index/cols);
+  const col=(index%cols)+1;
+  return `${rowLabel(row)}${col}`;
+}
+function tileMotionStyle(order:number, index:number, cols:number, rows:number){
+  const seed=((index+1)*9301 + (order+7)*49297) % 233280;
+  const seed2=((index+11)*5171 + (order+13)*28411) % 233280;
+  const rx=(seed/233280)*2-1;
+  const ry=(seed2/233280)*2-1;
+  const edge=(index%4);
+  const startX=Math.round((edge===0?-1:edge===1?1:rx)*window.innerWidth*0.42 + rx*140);
+  const startY=Math.round((edge===2?-1:edge===3?1:ry)*window.innerHeight*0.34 + ry*110);
+  const midX=Math.round(-startX*0.38 + rx*90);
+  const midY=Math.round(-startY*0.34 + ry*80);
+  const rotA=Math.round(rx*36);
+  const rotB=Math.round((rx-ry)*20);
+  const delay=Math.min(2.8, order*0.028);
+  return {
+    ['--from-x' as any]: `${startX}px`,
+    ['--from-y' as any]: `${startY}px`,
+    ['--mid-x' as any]: `${midX}px`,
+    ['--mid-y' as any]: `${midY}px`,
+    ['--rot-a' as any]: `${rotA}deg`,
+    ['--rot-b' as any]: `${rotB}deg`,
+    animation: `tileAssemble 1.85s cubic-bezier(.16,.82,.22,1) ${delay}s both`
+  } as React.CSSProperties;
+}
+
 function tileScatterStyle(index:number, cols:number, rows:number, active:boolean){
   if(!active) return {};
   const x=index%cols;
@@ -586,8 +624,8 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   }
   const range=Math.max(.08,maxLum-minLum);
   const mode=style==='classicTiles'
-    ? {targetBase:.38,targetEdge:.05,soft:.12,photoLum:.18,keep:.36,colorOverlay:.10,detailOverlay:.05}
-    : {targetBase:.58,targetEdge:.08,soft:.20,photoLum:.12,keep:.22,colorOverlay:.20,detailOverlay:.10};
+    ? {targetBase:.40,targetEdge:.05,soft:.12,photoLum:.18,keep:.34,colorOverlay:.10,detailOverlay:.05}
+    : {targetBase:.64,targetEdge:.09,soft:.22,photoLum:.11,keep:.16,colorOverlay:.24,detailOverlay:.12};
 
   for(let i=0;i<d.length;i+=4){
     const sr=d[i],sg=d[i+1],sb=d[i+2];
@@ -1190,7 +1228,7 @@ export default function ScreenPage(){
           width:isFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
           height:isFullscreen ? '100vh' : undefined,
           aspectRatio:isFullscreen ? undefined : `${cols}/${rows}`,
-          background:'#202020',
+          background:'#f3f3f3',
           borderRadius:isFullscreen ? 0 : 10,
           overflow:'hidden',
           boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009',
@@ -1202,14 +1240,16 @@ export default function ScreenPage(){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:isFullscreen?'0.2px solid rgba(0,0,0,.08)':'0.25px solid rgba(255,255,255,.04)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
-                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto">
+              const code=cellCode(i, cols);
+              return <div key={i} style={{background:'rgba(255,255,255,.12)',border:isFullscreen?'0.2px solid rgba(0,0,0,.06)':'0.25px solid rgba(255,255,255,.04)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
+                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto" style={tileMotionStyle(t.order, i, cols, rows)}>
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
+                <div className="tileCodeBadge">{code}</div>
               </div>
             })}
           </div>
-          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.30 : 0.16, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.38 : 0.22, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
