@@ -187,11 +187,24 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.48 : 0.22;
   ctx.save();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = opacity;
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  if(style === 'portraitOverlay'){
+    // Effetto tipo esempio della donna: la struttura del target emerge,
+    // ma le singole foto rimangono leggibili.
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = 0.22;
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    ctx.globalCompositeOperation = 'color';
+    ctx.globalAlpha = 0.16;
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.10;
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  }else{
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.20;
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  }
   ctx.restore();
 }
 
@@ -527,8 +540,8 @@ async function createPreviewMosaicTile(
     wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
     textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
   } : {
-    wTargetBase:0.46, wTargetEdge:0.06, wSoft:0.18, wPhotoLum:0.16, keepOriginal:0.32,
-    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.12, overlayColor:0.16, overlaySource:0.08
+    wTargetBase:0.48, wTargetEdge:0.06, wSoft:0.18, wPhotoLum:0.18, keepOriginal:0.38,
+    textureSoft:0.08, textureMultiply:0.025, overlaySoft:0.14, overlayColor:0.18, overlaySource:0.07
   };
 
   for(let i=0;i<d.length;i+=4){

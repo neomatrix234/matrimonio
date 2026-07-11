@@ -1137,8 +1137,12 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
-          {final && targetUrl && mosaicStyle==='portraitOverlay' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.46, pointerEvents:'none', userSelect:'none'}} />}
-          {final && targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.22, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && mosaicStyle==='portraitOverlay' && <>
+            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.22, mixBlendMode:'soft-light', pointerEvents:'none', userSelect:'none'}} />
+            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.16, mixBlendMode:'color', pointerEvents:'none', userSelect:'none'}} />
+            <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.10, pointerEvents:'none', userSelect:'none'}} />
+          </>}
+          {final && targetUrl && mosaicStyle==='classicTiles' && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.20, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
