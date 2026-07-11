@@ -187,7 +187,7 @@ async function applyFinalOverlay(canvas:HTMLCanvasElement, targetUrl:string, sty
   const img = await loadImg(targetUrl);
   const ctx = canvas.getContext('2d');
   if(!ctx) return;
-  const opacity = style === 'portraitOverlay' ? 0.48 : 0.22;
+  const opacity = style === 'portraitOverlay' ? 0.16 : 0.08;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = opacity;
@@ -527,8 +527,8 @@ async function createPreviewMosaicTile(
     wTargetBase:0.28, wTargetEdge:0.05, wSoft:0.10, wPhotoLum:0.22, keepOriginal:0.56,
     textureSoft:0.06, textureMultiply:0.02, overlaySoft:0.04, overlayColor:0.05, overlaySource:0.015
   } : {
-    wTargetBase:0.46, wTargetEdge:0.06, wSoft:0.18, wPhotoLum:0.16, keepOriginal:0.32,
-    textureSoft:0.09, textureMultiply:0.03, overlaySoft:0.12, overlayColor:0.16, overlaySource:0.08
+    wTargetBase:0.48, wTargetEdge:0.07, wSoft:0.16, wPhotoLum:0.14, keepOriginal:0.30,
+    textureSoft:0.05, textureMultiply:0.02, overlaySoft:0.07, overlayColor:0.14, overlaySource:0.03
   };
 
   for(let i=0;i<d.length;i+=4){
@@ -1375,7 +1375,7 @@ export default function AdminPage(){
             </div>
             <div style={{flex:1, overflow:'auto', padding:16}}>
               <div style={{width:'fit-content', margin:'0 auto', background:'#111', padding:10, borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
-                <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:1, background:'#0a0a0a'}}>
+                <div style={{display:'grid', gridTemplateColumns:`repeat(${interactivePreview.cols}, ${Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom))}px)`, gap:0.35, background:'#111'}}>
                   {interactivePreview.tiles.sort((a,b)=>a.index-b.index).map(tile => (
                     <button key={tile.index} type='button' onClick={()=>{ setSelectedPreviewTile(tile); setSelectedPreviewDetailUrl(tile.originalUrl); setSelectedPreviewTargetPatchUrl(''); setSelectedPreviewLoading(false); }} title={`Tessera ${tile.row+1}-${tile.col+1}`} style={{padding:0, border:'none', background:'transparent', width:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), height:Math.max(10, Math.round(interactivePreview.cellSize * interactivePreviewZoom)), cursor:'zoom-in'}}>
                       <img src={tile.renderedUrl} alt={`Tessera ${tile.index+1}`} style={{display:'block', width:'100%', height:'100%', objectFit:'cover'}} />

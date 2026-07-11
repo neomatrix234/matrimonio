@@ -543,69 +543,72 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const canvas=document.createElement('canvas');
   canvas.width=size;
   canvas.height=size;
-  const ctx=canvas.getContext('2d');
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
   if(!ctx) return url;
 
   const iw=img.naturalWidth || img.width;
   const ih=img.naturalHeight || img.height;
-  const crop = adaptiveSquareCrop(iw, ih, xNorm, yNorm);
-
-  // 1) Base: la foto ospite originale, nitida e ben riconoscibile.
+  const crop=adaptiveSquareCrop(iw,ih,xNorm,yNorm);
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
 
-  // 2) Estrai la vera porzione dell'immagine target corrispondente a questa cella:
-  //    ogni tessera prende esattamente il pezzo di volto/immagine che le spetta,
-  //    così ricomponendo tutte le tessere si ricompone il volto intero.
-  let targetCanvas:HTMLCanvasElement | null = null;
+  const targetCanvas=document.createElement('canvas');
+  targetCanvas.width=size;
+  targetCanvas.height=size;
+  const tctx=targetCanvas.getContext('2d',{willReadFrequently:true});
+  if(!tctx) return canvas.toDataURL('image/jpeg',.92);
   try{
-    if(targetUrl) targetCanvas = await extractExactTargetPatch(targetUrl, col, row, cols, rows, size);
-  }catch(e){ targetCanvas = null; }
-
-  // Fallback se il target non è disponibile: tinta piatta col colore medio della cella.
-  if(!targetCanvas){
-    targetCanvas=document.createElement('canvas');
-    targetCanvas.width=size;
-    targetCanvas.height=size;
-    const tctx=targetCanvas.getContext('2d');
-    if(tctx){
+    if(targetUrl){
+      const patch=await extractExactTargetPatch(targetUrl,col,row,cols,rows,size);
+      tctx.drawImage(patch,0,0,size,size);
+    }else{
       tctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
       tctx.fillRect(0,0,size,size);
     }
+  }catch{
+    tctx.fillStyle=`rgb(${target[0]},${target[1]},${target[2]})`;
+    tctx.fillRect(0,0,size,size);
   }
 
-  // 3) Doppia esposizione fotografica: è la tecnica reale usata nei mosaici in cui
-  //    un volto grande e nitido emerge sopra un muro di foto piccole (come nel
-  //    riferimento). Si ottiene sovrapponendo l'immagine target alla tessera con
-  //    tre passaggi di compositing nativo del canvas:
-  //    - "multiply": scurisce dove il target è scuro (capelli, sopracciglia,
-  //      pupille, ombre), facendo emergere i tratti scuri del volto;
-  //    - "screen": schiarisce dove il target è chiaro (pelle, luci, riflessi),
-  //      così anche le zone luminose del volto restano leggibili;
-  //    - "overlay": aumenta il contrasto locale seguendo la forma del target e
-  //      ne trasferisce leggermente il colore, "incollando" i due livelli.
-  //    Dove il target è neutro (es. sfondo uniforme) l'effetto è minimo e la
-  //    foto della tessera resta ben visibile sotto, esattamente come nel muro
-  //    di riferimento.
-  const weights = style === 'classicTiles'
-    ? { multiply:0.34, screen:0.18, overlay:0.24 }
-    : { multiply:0.58, screen:0.34, overlay:0.48 };
+  const src=ctx.getImageData(0,0,size,size);
+  const trg=tctx.getImageData(0,0,size,size);
+  const d=src.data, td=trg.data;
+  let minLum=1,maxLum=0;
+  for(let i=0;i<d.length;i+=4){
+    const lum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    if(lum<minLum) minLum=lum;
+    if(lum>maxLum) maxLum=lum;
+  }
+  const range=Math.max(.08,maxLum-minLum);
+  const mode=style==='classicTiles'
+    ? {targetBase:.34,targetEdge:.05,soft:.11,photoLum:.18,keep:.42,colorOverlay:.08,detailOverlay:.04}
+    : {targetBase:.48,targetEdge:.07,soft:.16,photoLum:.14,keep:.30,colorOverlay:.14,detailOverlay:.07};
 
-  ctx.globalCompositeOperation='multiply';
-  ctx.globalAlpha=weights.multiply;
+  for(let i=0;i<d.length;i+=4){
+    const sr=d[i],sg=d[i+1],sb=d[i+2];
+    const tr=td[i],tg=td[i+1],tb=td[i+2];
+    const srcLum=(0.2126*sr+0.7152*sg+0.0722*sb)/255;
+    const A=clamp01((srcLum-minLum)/range);
+    const targetLum=(0.2126*tr+0.7152*tg+0.0722*tb)/255;
+    const mid=clamp01(4*targetLum*(1-targetLum));
+    const blend=(tc:number,sc:number)=>{
+      const B=tc/255;
+      const soft=(1-2*B)*(A*A)+2*B*A;
+      const fused=clamp01(B*(mode.targetBase+(1-mid)*mode.targetEdge)+soft*(mode.soft+mid*.03)+A*(mode.photoLum+mid*.04));
+      return clamp(Math.round((fused*(1-mode.keep)+(sc/255)*mode.keep)*255));
+    };
+    d[i]=blend(tr,sr); d[i+1]=blend(tg,sg); d[i+2]=blend(tb,sb); d[i+3]=255;
+  }
+  ctx.putImageData(src,0,0);
+
+  ctx.globalCompositeOperation='color';
+  ctx.globalAlpha=mode.colorOverlay;
   ctx.drawImage(targetCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='screen';
-  ctx.globalAlpha=weights.screen;
+  ctx.globalCompositeOperation='soft-light';
+  ctx.globalAlpha=mode.detailOverlay;
   ctx.drawImage(targetCanvas,0,0,size,size);
-
-  ctx.globalCompositeOperation='overlay';
-  ctx.globalAlpha=weights.overlay;
-  ctx.drawImage(targetCanvas,0,0,size,size);
-
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=1;
-
-  return canvas.toDataURL('image/jpeg', .92);
+  return canvas.toDataURL('image/jpeg',.92);
 }
 
 
@@ -644,6 +647,7 @@ export default function ScreenPage(){
   const activeTotalRef=useRef<number>(0);
   const panDragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number;moved:boolean}|null>(null);
   const suppressTileClickRef=useRef(false);
+  const leavingForAdminRef=useRef(false);
 
   useEffect(()=>{
     if(typeof window==='undefined') return;
@@ -683,6 +687,32 @@ export default function ScreenPage(){
   function resetMosaicView(){
     setViewZoom(1);
     setViewPan({x:0,y:0});
+  }
+
+  function goToAdmin(){
+    if(leavingForAdminRef.current) return;
+    leavingForAdminRef.current=true;
+    try{
+      const configured=preferredTotal || status?.totalTiles || 200;
+      saveScreenState_({
+        version:1,
+        configuredTotal:configured,
+        density:mosaicTileDensity,
+        style:mosaicStyle,
+        targetUrl:currentTargetUrlRef.current || targetImageUrl(status),
+        targetAspect,
+        final,
+        paused,
+        replayStarted,
+        tiles
+      });
+    }catch{}
+    const go=()=>{ window.location.href='/admin'; };
+    if(document.fullscreenElement){
+      document.exitFullscreen().then(go).catch(go);
+    }else{
+      go();
+    }
   }
 
   function onMosaicWheel(e:React.WheelEvent<HTMLDivElement>){
@@ -1047,24 +1077,26 @@ export default function ScreenPage(){
       const nowFullscreen=Boolean(document.fullscreenElement);
       setIsFullscreen(nowFullscreen);
       if(wasFullscreen && !nowFullscreen){
-        // Uscendo dal pieno schermo torno in admin, ma salvo lo stato per riprendere dopo.
+        // ESC dal pieno schermo: torna sempre in Admin, senza interrompere il mosaico.
         setEscapedFullscreen(true);
         setShowFsStop(false);
-        setTimeout(()=>{ if(typeof window!=='undefined' && window.location.pathname === '/screen') window.location.href='/admin'; }, 30);
+        setTimeout(()=>goToAdmin(), 40);
       }
       if(nowFullscreen){
+        leavingForAdminRef.current=false;
         setEscapedFullscreen(false);
         resetMosaicView();
       }
       wasFullscreen=nowFullscreen;
     };
     const onKeyDown=(e:KeyboardEvent)=>{
-      if(e.key !== 'Escape') return;
+      if(e.key !== 'Escape' && e.key.toLowerCase() !== 'a') return;
       if(selectedTile){
         setSelectedTile(null);
         return;
       }
-      // Il browser gestisce l'uscita dal pieno schermo; la creazione non si interrompe.
+      e.preventDefault();
+      goToAdmin();
     };
     const onMouseMove=()=>{
       if(!document.fullscreenElement) return;
@@ -1082,7 +1114,7 @@ export default function ScreenPage(){
       window.removeEventListener('keydown',onKeyDown);
       window.removeEventListener('mousemove',onMouseMove);
     };
-  },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle,preferredTotal]);
+  },[replayStarted,final,paused,selectedTile,mosaicTileDensity,mosaicStyle,preferredTotal,tiles,status,targetAspect]);
 
 
 
@@ -1164,14 +1196,14 @@ export default function ScreenPage(){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:isFullscreen?'1px solid rgba(0,0,0,.20)':'1px solid rgba(255,255,255,.06)',overflow: final && decomposeTiles ? 'visible' : 'hidden', boxSizing:'border-box', position:'relative', zIndex: final && decomposeTiles ? 3 : 1}}>
-                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto" style={tileScatterStyle(i, cols, rows, final && decomposeTiles)}>
-                  <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease', opacity: final && decomposeTiles ? 0.28 : 1, transition:'opacity .9s ease'}}/>
+              return <div key={i} style={{background:'#222',border:isFullscreen?'0.35px solid rgba(0,0,0,.16)':'0.35px solid rgba(255,255,255,.05)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
+                {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto">
+                  <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
               </div>
             })}
           </div>
-          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.58 : 0.30, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.16 : 0.08, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
@@ -1198,6 +1230,7 @@ export default function ScreenPage(){
       {!isFullscreen && <div className="screenBottomControls">
         <button onClick={()=>startReplay(total)}>Replay finale</button>
         <button onClick={()=>{setEscapedFullscreen(false); document.documentElement.requestFullscreen();}}>Schermo intero</button>
+        <button onClick={goToAdmin}>Admin</button>
         <button className="danger" onClick={stopMosaic}>Interrompi</button>
         <button onClick={restartMosaic}>Riparti</button>
       </div>}
@@ -1207,6 +1240,7 @@ export default function ScreenPage(){
           <button onClick={()=>setViewZoom(z=>Math.max(0.45,z/1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>-</button>
           <button onClick={resetMosaicView} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>{Math.round(viewZoom*100)}%</button>
           <button onClick={()=>setViewZoom(z=>Math.min(8,z*1.2))} style={{border:'none',borderRadius:999,padding:'10px 14px',background:'rgba(20,20,20,.82)',color:'#fff',fontWeight:800,cursor:'pointer'}}>+</button>
+          <button onClick={goToAdmin} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(70,70,70,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Admin</button>
           {!final && !paused && <button onClick={stopMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(125,15,34,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Interrompi</button>}
           {paused && <button onClick={restartMosaic} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(16,120,80,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Riparti</button>}
           {final && <button onClick={()=>startReplay(total)} style={{border:'none',borderRadius:999,padding:'12px 18px',background:'rgba(30,90,180,.92)',color:'#fff',fontWeight:800,boxShadow:'0 10px 30px rgba(0,0,0,.35)',cursor:'pointer'}}>Replay</button>}
