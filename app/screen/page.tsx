@@ -550,6 +550,12 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   const ih=img.naturalHeight || img.height;
   const crop=adaptiveSquareCrop(iw,ih,xNorm,yNorm);
   ctx.drawImage(img,crop.sx,crop.sy,crop.side,crop.side,0,0,size,size);
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  ctx.globalAlpha=style === 'portraitOverlay' ? 0.12 : 0.06;
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,size,size);
+  ctx.restore();
 
   const targetCanvas=document.createElement('canvas');
   targetCanvas.width=size;
@@ -580,8 +586,8 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   }
   const range=Math.max(.08,maxLum-minLum);
   const mode=style==='classicTiles'
-    ? {targetBase:.34,targetEdge:.05,soft:.11,photoLum:.18,keep:.42,colorOverlay:.08,detailOverlay:.04}
-    : {targetBase:.48,targetEdge:.07,soft:.16,photoLum:.14,keep:.30,colorOverlay:.14,detailOverlay:.07};
+    ? {targetBase:.38,targetEdge:.05,soft:.12,photoLum:.18,keep:.36,colorOverlay:.10,detailOverlay:.05}
+    : {targetBase:.58,targetEdge:.08,soft:.20,photoLum:.12,keep:.22,colorOverlay:.20,detailOverlay:.10};
 
   for(let i=0;i<d.length;i+=4){
     const sr=d[i],sg=d[i+1],sb=d[i+2];
@@ -1196,14 +1202,14 @@ export default function ScreenPage(){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
-              return <div key={i} style={{background:'#222',border:isFullscreen?'0.35px solid rgba(0,0,0,.16)':'0.35px solid rgba(255,255,255,.05)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
+              return <div key={i} style={{background:'#222',border:isFullscreen?'0.2px solid rgba(0,0,0,.08)':'0.25px solid rgba(255,255,255,.04)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
                 {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto">
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
               </div>
             })}
           </div>
-          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.16 : 0.08, pointerEvents:'none', userSelect:'none'}} />}
+          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.30 : 0.16, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'
