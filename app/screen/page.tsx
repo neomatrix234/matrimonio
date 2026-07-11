@@ -186,24 +186,38 @@ function cellCode(index:number, cols:number){
 function tileMotionStyle(order:number, index:number, cols:number, rows:number){
   const seed=((index+1)*9301 + (order+7)*49297) % 233280;
   const seed2=((index+11)*5171 + (order+13)*28411) % 233280;
+  const seed3=((index+31)*7129 + (order+23)*19373) % 233280;
+  const seed4=((index+17)*1223 + (order+19)*41041) % 233280;
   const rx=(seed/233280)*2-1;
   const ry=(seed2/233280)*2-1;
+  const r2=(seed3/233280)*2-1;
+  const r3=(seed4/233280)*2-1;
   const edge=(index%4);
-  const startX=Math.round((edge===0?-1:edge===1?1:rx)*window.innerWidth*0.42 + rx*140);
-  const startY=Math.round((edge===2?-1:edge===3?1:ry)*window.innerHeight*0.34 + ry*110);
-  const midX=Math.round(-startX*0.38 + rx*90);
-  const midY=Math.round(-startY*0.34 + ry*80);
-  const rotA=Math.round(rx*36);
-  const rotB=Math.round((rx-ry)*20);
-  const delay=Math.min(2.8, order*0.028);
+  const startX=Math.round((edge===0?-1:edge===1?1:rx)*window.innerWidth*0.48 + rx*180);
+  const startY=Math.round((edge===2?-1:edge===3?1:ry)*window.innerHeight*0.42 + ry*150);
+  const fly1X=Math.round((rx*0.55+r2*0.45)*window.innerWidth*0.34);
+  const fly1Y=Math.round((ry*0.45-r2*0.55)*window.innerHeight*0.26);
+  const fly2X=Math.round((-rx*0.35+r3*0.65)*window.innerWidth*0.22);
+  const fly2Y=Math.round((-ry*0.35-r3*0.65)*window.innerHeight*0.18);
+  const settleX=Math.round((r2-r3)*34);
+  const settleY=Math.round((r3+rx)*24);
+  const rotA=Math.round(rx*42);
+  const rotB=Math.round((rx-ry)*32);
+  const rotC=Math.round((r2+r3)*18);
+  const delay=Math.min(3.2, order*0.022);
   return {
     ['--from-x' as any]: `${startX}px`,
     ['--from-y' as any]: `${startY}px`,
-    ['--mid-x' as any]: `${midX}px`,
-    ['--mid-y' as any]: `${midY}px`,
+    ['--fly1-x' as any]: `${fly1X}px`,
+    ['--fly1-y' as any]: `${fly1Y}px`,
+    ['--fly2-x' as any]: `${fly2X}px`,
+    ['--fly2-y' as any]: `${fly2Y}px`,
+    ['--settle-x' as any]: `${settleX}px`,
+    ['--settle-y' as any]: `${settleY}px`,
     ['--rot-a' as any]: `${rotA}deg`,
     ['--rot-b' as any]: `${rotB}deg`,
-    animation: `tileAssemble 1.85s cubic-bezier(.16,.82,.22,1) ${delay}s both`
+    ['--rot-c' as any]: `${rotC}deg`,
+    animation: `tileAssemble 3.6s cubic-bezier(.16,.82,.22,1) ${delay}s both`
   } as React.CSSProperties;
 }
 
@@ -624,8 +638,8 @@ async function createMosaicTile(url:string, target:Rgb, targetPatch:Rgb[]=[], xN
   }
   const range=Math.max(.08,maxLum-minLum);
   const mode=style==='classicTiles'
-    ? {targetBase:.40,targetEdge:.05,soft:.12,photoLum:.18,keep:.34,colorOverlay:.10,detailOverlay:.05}
-    : {targetBase:.64,targetEdge:.09,soft:.22,photoLum:.11,keep:.16,colorOverlay:.24,detailOverlay:.12};
+    ? {targetBase:.46,targetEdge:.06,soft:.13,photoLum:.18,keep:.26,colorOverlay:.12,detailOverlay:.06}
+    : {targetBase:.74,targetEdge:.10,soft:.24,photoLum:.10,keep:.08,colorOverlay:.28,detailOverlay:.14};
 
   for(let i=0;i<d.length;i+=4){
     const sr=d[i],sg=d[i+1],sb=d[i+2];
@@ -1228,7 +1242,7 @@ export default function ScreenPage(){
           width:isFullscreen ? '100vw' : `min(94vw, ${cols*28}px)`,
           height:isFullscreen ? '100vh' : undefined,
           aspectRatio:isFullscreen ? undefined : `${cols}/${rows}`,
-          background:'#f3f3f3',
+          background:'#0f1115',
           borderRadius:isFullscreen ? 0 : 10,
           overflow:'hidden',
           boxShadow:isFullscreen ? 'none' : '0 12px 50px #0009',
@@ -1237,11 +1251,12 @@ export default function ScreenPage(){
           transition:isPanning?'none':'transform 80ms linear',
           willChange:'transform'
         }}>
-          <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%'}}>
+          {targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity: final ? (mosaicStyle==='portraitOverlay' ? 0.46 : 0.26) : (mosaicStyle==='portraitOverlay' ? 0.08 : 0.05), pointerEvents:'none', userSelect:'none'}} />}
+          <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gridTemplateRows:`repeat(${rows},1fr)`,width:'100%',height:'100%', position:'relative', zIndex:2}}>
             {cells.map((_,i)=>{
               const t=tileMap.get(i);
               const code=cellCode(i, cols);
-              return <div key={i} style={{background:'rgba(255,255,255,.12)',border:isFullscreen?'0.2px solid rgba(0,0,0,.06)':'0.25px solid rgba(255,255,255,.04)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
+              return <div key={i} style={{background:'rgba(255,255,255,.04)',border:isFullscreen?'0.25px solid rgba(255,255,255,.06)':'0.25px solid rgba(255,255,255,.05)',overflow:'hidden', boxSizing:'border-box', position:'relative'}}>
                 {t && <button className="tileButton" onClick={()=>{if(suppressTileClickRef.current)return; setSelectedTile(t);}} title="Vedi foto" style={tileMotionStyle(t.order, i, cols, rows)}>
                   <img src={t.modifiedUrl} alt="" style={{animation:'pop .45s ease'}}/>
                 </button>}
@@ -1249,7 +1264,6 @@ export default function ScreenPage(){
               </div>
             })}
           </div>
-          {final && targetUrl && <img src={targetUrl} alt="" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:mosaicStyle==='portraitOverlay' ? 0.38 : 0.22, pointerEvents:'none', userSelect:'none'}} />}
           {completeMsg && !isFullscreen && <div style={{
             position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',
             background:'rgba(0,0,0,.55)',fontSize:'clamp(36px,7vw,92px)',fontWeight:900,zIndex:4,textShadow:'0 4px 22px #000'

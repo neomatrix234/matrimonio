@@ -1591,8 +1591,9 @@ pre{
   z-index:3;
   padding:1px 4px;
   border-radius:6px;
-  background:rgba(255,255,255,.34);
-  color:rgba(0,0,0,.62);
+  background:rgba(0,0,0,.34);
+  color:rgba(255,255,255,.50);
+  border:1px solid rgba(255,255,255,.10);
   font-size:9px;
   line-height:1.1;
   font-weight:700;
@@ -1601,10 +1602,11 @@ pre{
   backdrop-filter:blur(1px);
 }
 @keyframes tileAssemble{
-  0%{ transform:translate(var(--from-x), var(--from-y)) rotate(var(--rot-a)) scale(.68); opacity:0; }
-  16%{ opacity:1; }
-  38%{ transform:translate(calc(var(--mid-x) * 1.15), calc(var(--mid-y) * 1.15)) rotate(var(--rot-b)) scale(1.06); }
-  64%{ transform:translate(calc(var(--mid-x) * -.28), calc(var(--mid-y) * -.28)) rotate(calc(var(--rot-b) * -.35)) scale(.97); }
-  82%{ transform:translate(8px, -6px) rotate(3deg) scale(1.01); }
+  0%{ transform:translate(var(--from-x), var(--from-y)) rotate(var(--rot-a)) scale(.64); opacity:0; }
+  8%{ opacity:.95; }
+  26%{ transform:translate(var(--fly1-x), var(--fly1-y)) rotate(var(--rot-b)) scale(.92); }
+  48%{ transform:translate(calc(var(--fly1-x) * -.55), calc(var(--fly1-y) * -.55)) rotate(calc(var(--rot-c) * -1)) scale(1.02); }
+  68%{ transform:translate(var(--fly2-x), var(--fly2-y)) rotate(var(--rot-c)) scale(.98); }
+  82%{ transform:translate(var(--settle-x), var(--settle-y)) rotate(4deg) scale(1.04); opacity:1; }
   100%{ transform:translate(0,0) rotate(0deg) scale(1); opacity:1; }
 }
